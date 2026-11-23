@@ -344,6 +344,17 @@ void enable_uart_clk(void)
 	cpm_outl(clkgr1, CPM_CLKGR1);
 }
 
+/*
+ * Ungate the OTG clock and hold the USB PHY in power-on reset, which
+ * releases the D+ pull-up: the host sees a disconnect. otg_phy_init()
+ * takes the PHY out of reset again.
+ */
+void otg_phy_hold_reset(void)
+{
+	cpm_outl(cpm_inl(CPM_CLKGR0) & ~CPM_CLKGR_OTG, CPM_CLKGR0);
+	cpm_outl(cpm_inl(CPM_USBPCR) | USBPCR_POR, CPM_USBPCR);
+}
+
 void otg_phy_init(enum otg_mode_t mode, unsigned extclk) {
 
 	u8 reg;
@@ -372,6 +383,19 @@ void otg_phy_init(enum otg_mode_t mode, unsigned extclk) {
 		break;
 	case DEVICE_ONLY_MODE:
 		tmp_reg &= ~USBPCR_USB_MODE | USBPCR_IDPULLUP_OTG;
+#ifdef CONFIG_JZ_UDC_VBUS_ALWAYS_VALID
+		/*
+		 * As Ingenic's Linux PHY drivers do in device-only mode ("vbus
+		 * signal always valid"): take VBUS valid from VBUSVLDEXT (held
+		 * at 1) and hold B-session valid, instead of the PHY's VBUS
+		 * comparator. That comparator drops while the host keeps the
+		 * bus suspended; the core then ends the session and, on resume,
+		 * the host finds an unconfigured device and re-enumerates it.
+		 */
+		tmp_reg |= USBPCR_VBUSVLDEXT | USBPCR_VBUSVLDEXTSEL |
+			   USBPCR_OTG_DISABLE;
+		cpm_outl(cpm_inl(CPM_USBPCR1) | USBPCR1_BVLD_REG, CPM_USBPCR1);
+#endif
 	}
 	cpm_outl(tmp_reg, CPM_USBPCR);
 
@@ -415,6 +439,48 @@ void otg_phy_init(enum otg_mode_t mode, unsigned extclk) {
 	reg &= ~(0x7 << 3);
 	reg |= 0x7 << 3;
 	usb_phy_writeb(reg, PHY_BASE + 0x40);
+
+#ifdef CONFIG_X1600_USB_PHY_TUNING
+	/*
+	 * The rest of what Linux's X1600 PHY setup does
+	 * (drivers/usb/phy/ingenic_phy/x1600_phy.c, iphy_init_x1600() and
+	 * the 7 tuning entries it applies), which U-Boot left at the reset
+	 * values: D+/D- pull-downs back on after the port reset, the
+	 * receiver squelch trigger, HS termination, pre-emphasis and the
+	 * session/VBUS reference levels.
+	 */
+	{
+		static const struct {
+			u16 addr;
+			u8 msk, off, val;
+		} tune[] = {
+			{ 0x11c, 0x1f, 0, 0x1c },	/* 45 ohm HS ODT */
+			{ 0x030, 0x07, 0, 0x07 },	/* pre-emphasis always on */
+			{ 0x040, 0x07, 3, 0x07 },	/* HS pre-emphasis strength */
+			{ 0x10c, 0x07, 0, 0x05 },	/* A session valid reference */
+			{ 0x10c, 0x07, 3, 0x05 },	/* B session valid reference */
+			{ 0x110, 0x07, 0, 0x05 },	/* VBUS valid reference */
+			{ 0x110, 0x07, 3, 0x05 },	/* session end reference */
+		};
+		int i;
+
+		tmp_reg = cpm_inl(CPM_USBPCR1);
+		tmp_reg |= USBPCR1_DPPULLDOWN | USBPCR1_DMPULLDOWN;
+		cpm_outl(tmp_reg, CPM_USBPCR1);
+
+		reg = usb_phy_readb(PHY_BASE + PHY_RX_SQU_TRI);
+		reg &= ~(0xf << 3);
+		reg |= PHY_RX_SQU_TRI_125MV << 3;
+		usb_phy_writeb(reg, PHY_BASE + PHY_RX_SQU_TRI);
+
+		for (i = 0; i < ARRAY_SIZE(tune); i++) {
+			reg = usb_phy_readb(PHY_BASE + tune[i].addr);
+			reg &= ~(tune[i].msk << tune[i].off);
+			reg |= tune[i].val << tune[i].off;
+			usb_phy_writeb(reg, PHY_BASE + tune[i].addr);
+		}
+	}
+#endif
 
 	return 0;
 }

@@ -924,6 +924,35 @@ static void ddrp_software_calibration(void)
 
 #ifndef CONFIG_BURNER
 
+#ifdef CONFIG_X1600_SOCID_TABLE
+int check_socid_table(unsigned int *ddrid, const char **name);
+
+/* Only trust the eFuse DDR ID when the SoC ID is a known X1600 variant. */
+int get_ddr_params_socid(void)
+{
+	int i;
+	unsigned int ddrid = 0;
+	const char *name = NULL;
+
+	if (check_socid_table(&ddrid, &name) < 0) {
+		printf("Check socid return invalid ddr id\n");
+		return -1;
+	}
+
+	printf("SOC: %s\n", name);
+
+	for (i = 0; i < ARRAY_SIZE(supported_ddr_reg_values); i++) {
+		if ((ddrid & ~(0x7 << 3)) ==
+		    (supported_ddr_reg_values[i].h.id & ~(0x7 << 3))) {
+			global_reg_value = &supported_ddr_reg_values[i];
+			return 0;
+		}
+	}
+
+	printf("Check socid not match to %x\n", ddrid);
+	return -1;
+}
+#else
 int get_ddr_params_socid(void)
 {
 	int i;
@@ -951,6 +980,7 @@ int get_ddr_params_socid(void)
 
 	return 0;
 }
+#endif /* CONFIG_X1600_SOCID_TABLE */
 
 void get_ddr_params_normal(void)
 {

@@ -4,7 +4,7 @@
 #include "../jz_sfc_common.h"
 #include "nand_common.h"
 
-#define WINBOND_DEVICES_NUM         3
+#define WINBOND_DEVICES_NUM         4
 #define TSETUP		5
 #define THOLD		5
 #define	TSHSL_R		10
@@ -78,12 +78,33 @@ static struct jz_sfcnand_base_param winbond_param[WINBOND_DEVICES_NUM] = {
 		.ecc_max = 0x4,
 		.need_quad = 1,
 	},
+	[3] = {
+		/*W25N04KVxxIR/U: values from the HiBy R1 stock kernel*/
+		.pagesize = 2 * 1024,
+		.oobsize = 128,
+		.blocksize = 2 * 1024 * 64,
+		.flashsize = 2 * 1024 * 64 * 4096,
+
+		.tSETUP = TSETUP,
+		.tHOLD  = THOLD,
+		.tSHSL_R = TSHSL_R,
+		.tSHSL_W = TSHSL_W,
+
+		.tRD = TRD,
+		.tPP = TPP,
+		.tBE = TBE,
+
+		.plane_select = 1,
+		.ecc_max = 0x8,
+		.need_quad = 1,
+	},
 };
 
 static struct device_id_struct device_id[WINBOND_DEVICES_NUM] = {
 	DEVICE_ID_STRUCT(0xAA21, "W25N01GVZEIG", &winbond_param[0]),
 	DEVICE_ID_STRUCT(0xAA22, "W25N02KVxxIR/U", &winbond_param[1]),
 	DEVICE_ID_STRUCT(0xAE21, "W25N01KVxxIR/U", &winbond_param[2]),
+	DEVICE_ID_STRUCT(0xAA23, "W25N04KVxxIR/U", &winbond_param[3]),
 };
 
 
@@ -95,6 +116,7 @@ static cdt_params_t *winbond_get_cdt_params(struct sfc_flash *flash, uint16_t de
 		case 0xAA21:
 		case 0xAA22:
 		case 0xAE21:
+		case 0xAA23:
 		    break;
 		default:
 		    pr_err("device_id err, please check your  device id: device_id = 0x%02x\n", device_id);
@@ -135,6 +157,21 @@ static inline int deal_ecc_status(struct sfc_flash *flash, uint16_t device_id, u
 					return -EBADMSG;
 				default:
 					break;
+			}
+			break;
+		case 0xAA23:
+			/* as the HiBy R1 stock kernel: 1 and 3 report bitflips in 0x30[7:4] */
+			switch((ecc_status >> 4) & 0x3) {
+				case 0x0:
+					return 0;
+				case 0x1:
+				case 0x3:
+					ret = nand_get_ecc_conf(flash, 0x30);
+					if (ret < 0)
+						return ret;
+					return (ret >> 4) & 0xf;
+				case 0x2:
+					return -EBADMSG;
 			}
 			break;
 		default:

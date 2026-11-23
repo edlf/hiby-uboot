@@ -63,6 +63,17 @@ struct ddr_chip_info {
 	unsigned int DDR_tXARD;
 	unsigned int DDR_tXARDS;
 	unsigned int DDR_AL;
+
+	/*
+	 * Optional DDR2 mode-register overrides (ddr_creator_x1600). Left at 0,
+	 * the global CONFIG_DDR_DLL_OFF / CONFIG_DDR_CHIP_ODT /
+	 * CONFIG_DDR_DLL_RESET_EN settings apply. When DDR2_MR_OVERRIDE is set
+	 * by the chip's init(), the three values below are used instead.
+	 */
+	unsigned int DDR2_MR_OVERRIDE;
+	unsigned int DDR2_DLL_OFF;	/* EMR DE: 1 = DLL disabled */
+	unsigned int DDR2_ODT;		/* EMR RTT2: 1 = 75 ohm */
+	unsigned int DDR2_DLL_RESET;	/* MR DR */
 };
 
 enum {

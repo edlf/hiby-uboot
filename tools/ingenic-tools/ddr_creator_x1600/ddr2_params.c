@@ -83,6 +83,12 @@ static void fill_in_params_ddr2(struct ddr_params *ddr_params, struct ddr_chip_i
 	ddr_params->cl = chip->DDR_CL;
 #ifdef CONFIG_DDR_INNOPHY
 	fill_mr_params_ddr2(ddr_params);
+
+	if (chip->DDR2_MR_OVERRIDE) {
+		ddr_params->mr1.ddr2.DE = chip->DDR2_DLL_OFF;
+		ddr_params->mr1.ddr2.RTT2 = chip->DDR2_ODT;
+		ddr_params->mr0.ddr2.DR = chip->DDR2_DLL_RESET;
+	}
 #endif
 }
 

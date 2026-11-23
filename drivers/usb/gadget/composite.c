@@ -834,6 +834,30 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		*((u8 *)req->buf) = value;
 		value = min(w_length, (u16) 1);
 		break;
+#ifdef CONFIG_USB_COMPOSITE_STD_STATUS
+	/*
+	 * GET_STATUS: two bytes, all zero here (bus powered, no remote
+	 * wakeup, no endpoint halted). The host sends it after every resume
+	 * from suspend and after configuring; without an answer it waits
+	 * 5 s and resets the device. Feature requests to the device or an
+	 * interface (remote wakeup, test mode) are acknowledged and ignored;
+	 * the UDC driver handles endpoint halt itself.
+	 */
+	case USB_REQ_GET_STATUS:
+		if (!(ctrl->bRequestType & USB_DIR_IN) || w_length < 2)
+			goto unknown;
+		((u8 *)req->buf)[0] = 0;
+		((u8 *)req->buf)[1] = 0;
+		value = 2;
+		break;
+	case USB_REQ_CLEAR_FEATURE:
+	case USB_REQ_SET_FEATURE:
+		if ((ctrl->bRequestType & USB_RECIP_MASK) ==
+		    USB_RECIP_ENDPOINT)
+			goto unknown;
+		value = 0;
+		break;
+#endif
 	default:
 unknown:
 #ifdef CONFIG_BURNER		/*burner vendor reguest use 'index' for other purposes, so intf != (wIndex & 0ff), it's always 0*/

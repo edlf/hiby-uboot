@@ -710,6 +710,68 @@ static int32_t sfc_nand_set_feature(struct sfc_flash *flash, uint8_t addr, uint8
 	return 0;
 }
 
+/*
+ * Unique ID, read the way most SPI NAND vendors do it (borrowed from
+ * ONFI, e.g. GigaDevice GD5F*M7 "Read UID"): with OTP_EN (bit 6 of feature
+ * register B0h) set, page 0 holds sixteen copies of a 16-byte UID followed
+ * by its bitwise complement. There is no formal SPI NAND standard, so the
+ * data is only trusted when a copy checks out (every UID byte XOR its
+ * complement == 0xff); a chip that does not follow the convention fails
+ * that check. B0h is restored whatever happens.
+ */
+/* uid-check begin (pure, host-testable) */
+#define SPINAND_UID_LEN		16
+#define SPINAND_UID_COPIES	16
+
+static int spinand_uid_from_page(const uint8_t *page, uint8_t *uid)
+{
+	int c, i;
+
+	for (c = 0; c < SPINAND_UID_COPIES; c++) {
+		const uint8_t *p = page + c * 2 * SPINAND_UID_LEN;
+
+		for (i = 0; i < SPINAND_UID_LEN; i++)
+			if ((uint8_t)(p[i] ^ p[i + SPINAND_UID_LEN]) != 0xff)
+				break;
+		if (i == SPINAND_UID_LEN) {
+			memcpy(uid, p, SPINAND_UID_LEN);
+			return 0;
+		}
+	}
+	return -1;
+}
+/* uid-check end */
+
+static int32_t sfc_nand_get_feature(struct sfc_flash *flash, uint8_t addr, uint8_t *val);
+static int32_t sfc_nand_set_feature(struct sfc_flash *flash, uint8_t addr, uint8_t val);
+
+int jz_sfcnand_read_uid(uint8_t *uid)
+{
+	uint8_t b0, check, page[SPINAND_UID_COPIES * 2 * SPINAND_UID_LEN];
+	int ret = -ENODEV;
+
+	if (!flash || !flash->flash_info)
+		return -ENODEV;
+	if (sfc_nand_get_feature(flash, 0xb0, &b0))
+		return -EIO;
+
+	if (!sfc_nand_set_feature(flash, 0xb0, b0 | (1 << 6)) &&
+	    !sfc_nand_get_feature(flash, 0xb0, &check) && (check & (1 << 6))) {
+		struct jz_sfcnand_flashinfo *nand_info = flash->flash_info;
+		uint8_t quad = nand_info->param.need_quad;
+
+		/* the UID is read with 03h/0Bh (datasheet), not the quad reads */
+		nand_info->param.need_quad = 0;
+		memset(page, 0, sizeof(page));
+		jz_sfc_nand_read(flash, 0, 0, page, sizeof(page)); /* ECC status not used */
+		nand_info->param.need_quad = quad;
+		ret = spinand_uid_from_page(page, uid) ? -ENOENT : 0;
+	}
+
+	sfc_nand_set_feature(flash, 0xb0, b0);	/* leave OTP mode */
+	return ret;
+}
+
 static int32_t sfc_nand_clear_write_protect(struct sfc_flash *flash)
 {
 	return sfc_nand_set_feature(flash, 0xa0, 0);

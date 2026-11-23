@@ -22,6 +22,7 @@
  */
 
 #include <common.h>
+#include <ramlog.h>
 #include <stdarg.h>
 #include <malloc.h>
 #include <serial.h>
@@ -431,6 +432,9 @@ static inline void print_pre_console_buffer(void) {}
 
 void putc(const char c)
 {
+#if defined(CONFIG_RAMLOG) && !defined(CONFIG_SPL_BUILD)
+	ramlog_putc(c);		/* before the silent checks: log everything */
+#endif
 #ifdef CONFIG_SILENT_CONSOLE
 	if (gd->flags & GD_FLG_SILENT)
 		return;
@@ -455,6 +459,9 @@ void putc(const char c)
 
 void puts(const char *s)
 {
+#if defined(CONFIG_RAMLOG) && !defined(CONFIG_SPL_BUILD)
+	ramlog_puts(s);
+#endif
 #ifdef CONFIG_SILENT_CONSOLE
 	if (gd->flags & GD_FLG_SILENT)
 		return;

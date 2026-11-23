@@ -49,6 +49,16 @@
 #error CONFIG_X1600HN_DDR2_MEM_FREQ don't support, check data_rate range
 #endif
 
+/*
+ * Conservative tuning used by the HiBy R1 stock SPL: CL7 (WL6) regardless
+ * of frequency, tWTR 10ns, tMRD 4tck, DLL off, 75 ohm on-die termination,
+ * DLL reset set.
+ */
+#ifdef CONFIG_X1600HN_DDR2_CONSERVATIVE
+#undef CONFIG_DDR_CL
+#define CONFIG_DDR_CL	7
+#endif
+
 static inline void X1600HN_DDR2_init(void *data)
 {
 	struct ddr_chip_info *c = (struct ddr_chip_info *)data;
@@ -92,6 +102,16 @@ static inline void X1600HN_DDR2_init(void *data)
 	c->DDR_tREFI   = DDR__ns(3900);
 
 	c->DDR_CLK_DIV = 1;
+
+#ifdef CONFIG_X1600HN_DDR2_CONSERVATIVE
+	c->DDR_tWTR    = DDR__ns(10);
+	c->DDR_tMRD    = DDR__tck(4);
+
+	c->DDR2_MR_OVERRIDE = 1;
+	c->DDR2_DLL_OFF     = 1;
+	c->DDR2_ODT         = 1;
+	c->DDR2_DLL_RESET   = 1;
+#endif
 }
 
 #define X1600HN_DDR2 {					\

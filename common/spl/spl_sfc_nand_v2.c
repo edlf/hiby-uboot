@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <asm/io.h>
 #include <asm/arch/clk.h>
+#include <asm/arch/cpm.h>
 #include <asm/arch/sfc.h>
 #include <asm/arch/spinand.h>
 #include "spl.h"
@@ -1099,17 +1100,178 @@ void spl_sfc_nand_rtos_load(void)
 #endif
 
 #ifdef CONFIG_SPL_OS_OTA_BOOT
+/* Board hook: return non-zero to boot kernel2 regardless of the OTA flag. */
+int __weak spl_board_boot_kernel2(void)
+{
+	return 0;
+}
+
+/*
+ * Board hook: return non-zero to force the normal kernel, over the OTA
+ * record, the U-Boot request, the reboot signatures and the other keys.
+ */
+int __weak spl_board_boot_normal(void)
+{
+	return 0;
+}
+
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+/* Board hook: return non-zero to start the full U-Boot instead of Linux. */
+int __weak spl_board_boot_uboot(void)
+{
+	return 0;
+}
+
+/*
+ * Load the raw u-boot.bin stored right after the SPL in the "uboot"
+ * partition. spl.c then jumps to it (spl_image.os == IH_OS_U_BOOT).
+ */
+static void spl_sfc_nand_load_uboot(struct jz_sfcnand_partition_param *partitions)
+{
+	struct jz_sfcnand_partition *part;
+	unsigned int len = CONFIG_SYS_MONITOR_LEN;
+
+	/* partitions live at CONFIG_SYS_TEXT_BASE: read before overwriting */
+	part = get_part_by_name(partitions, CONFIG_SPL_UBOOT_PART_NAME);
+	if (part && part->size > CONFIG_UBOOT_OFFSET)
+		len = part->size - CONFIG_UBOOT_OFFSET;
+
+	printf("SPL: starting U-Boot\n");
+	sfc_nand_load(CONFIG_UBOOT_OFFSET, len, CONFIG_SYS_TEXT_BASE);
+	spl_parse_image_header((struct image_header *)CONFIG_SYS_TEXT_BASE);
+}
+#endif
+
+#ifdef CONFIG_SPL_OTA_ERASE_INVALID
+#define OTA_REC_LEN	128
+#define OTA_BLOCK_SIZE	0x20000		/* sfc_erase_data() erases 128 KiB */
+
+/* ota-record-check begin (pure, host-testable) */
+static int ota_pad(unsigned char c)
+{
+	return c == ' ' || c == '\0' || c == '\n' || c == 0xff;
+}
+
+/* An erased record: all 0xff. */
+static int ota_rec_blank(const char *buf)
+{
+	int i;
+
+	for (i = 0; i < OTA_REC_LEN; i++)
+		if ((unsigned char)buf[i] != 0xff)
+			return 0;
+	return 1;
+}
+
+/* Exactly @token, followed only by padding. */
+static int ota_rec_is(const char *buf, const char *token)
+{
+	int i, n = strlen(token);
+
+	if (strncmp(buf, token, n))
+		return 0;
+	for (i = n; i < OTA_REC_LEN; i++)
+		if (!ota_pad(buf[i]))
+			return 0;
+	return 1;
+}
+/* ota-record-check end */
+
+/*
+ * Read @len bytes at @addr straight from the page, without the bad-block
+ * skipping of sfc_nand_load(). Returns 0, 1 for a block marked bad (only
+ * seen on the block's first page) or -1 for an uncorrectable ECC error.
+ */
+static int ota_read_raw(unsigned int addr, char *buf)
+{
+	unsigned int pagesize = curr_device->pagesize;
+	int ret, retry = 5;
+
+	do {
+		ret = spinand_read_page(addr / pagesize, addr % pagesize,
+					(unsigned char *)buf, OTA_REC_LEN, pagesize);
+	} while (ret < 0 && retry--);
+
+	return ret;
+}
+
+/*
+ * Check the "ota" block. Page 0 must be blank, "ota:kernel" or
+ * "ota:kernel2"; page 1 (when the U-Boot request is enabled) blank or that
+ * request. Anything else erases the block, which boots normally. A block
+ * marked bad is never erased (that would wipe the marker).
+ */
+static void spl_ota_check(unsigned int ota_addr, int *is_kernel2, int *want_uboot)
+{
+	const char *kernel = "ota:"CONFIG_SPL_OS_NAME;
+	const char *kernel2 = "ota:"CONFIG_SPL_OS_NAME2;
+	char rec[OTA_REC_LEN];
+	int ret, valid, k2;
+
+	*is_kernel2 = 0;
+	*want_uboot = 0;
+
+	ret = ota_read_raw(ota_addr, rec);
+	if (ret > 0) {
+		printf("ota: bad block, ignored\n");
+		return;
+	}
+
+	k2 = ota_rec_is(rec, kernel2);
+	valid = !ret && (k2 || ota_rec_blank(rec) || ota_rec_is(rec, kernel));
+
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+	if (valid) {
+		ret = ota_read_raw(ota_addr + CONFIG_SPL_OTA_UBOOT_FLAG_OFFSET, rec);
+		if (!ret && ota_rec_is(rec, CONFIG_SPL_OTA_UBOOT_FLAG))
+			*want_uboot = 1;
+		else if (ret || !ota_rec_blank(rec))
+			valid = 0;
+	}
+#endif
+
+	if (valid) {
+		*is_kernel2 = k2;
+		return;
+	}
+
+	*want_uboot = 0;
+	if (ota_addr & (OTA_BLOCK_SIZE - 1)) {
+		printf("ota: invalid, not block aligned, ignored\n");
+		return;
+	}
+	printf("ota: invalid record, erasing\n");
+	sfc_erase_data(ota_addr, OTA_BLOCK_SIZE);
+}
+#endif /* CONFIG_SPL_OTA_ERASE_INVALID */
+
 static char *spl_sfc_nand_os_ota_load(void)
 {
 	struct jz_sfcnand_partition_param *partitions;
 	unsigned int img_addr = 0;
 	int is_kernel2=0;
+	int force_normal;
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+	int want_uboot = 0;
+#endif
 	const char *kernel_name=CONFIG_SPL_OS_NAME;
 
 	sfc_init();
 
 	partitions = get_partitions();
 	img_addr = get_part_offset_by_name(partitions, CONFIG_SPL_OTA_NAME);
+#ifdef CONFIG_SPL_OTA_ERASE_INVALID
+	if (img_addr != -1) {
+		int uboot_req;
+
+		spl_ota_check(img_addr, &is_kernel2, &uboot_req);
+		if (is_kernel2)
+			kernel_name = CONFIG_SPL_OS_NAME2;
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+		want_uboot = uboot_req;
+#endif
+	}
+#else
 	if (img_addr != -1) {
 		char buf[128];
 		const char *kernel2 = "ota:"CONFIG_SPL_OS_NAME2;
@@ -1118,6 +1280,74 @@ static char *spl_sfc_nand_os_ota_load(void)
 			is_kernel2 = 1;
 			kernel_name=CONFIG_SPL_OS_NAME2;
 		}
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+		/*
+		 * The U-Boot request sits at its own offset in the "ota"
+		 * partition so the kernel/kernel2 record above is kept.
+		 */
+		sfc_nand_load(img_addr + CONFIG_SPL_OTA_UBOOT_FLAG_OFFSET,
+			      sizeof(buf), (unsigned int)buf);
+		if (!strncmp(CONFIG_SPL_OTA_UBOOT_FLAG, buf,
+			     strlen(CONFIG_SPL_OTA_UBOOT_FLAG)))
+			want_uboot = 1;
+#endif
+	}
+#endif /* CONFIG_SPL_OTA_ERASE_INVALID */
+
+	/* one-shot signatures below are still cleared, just not acted on */
+	force_normal = spl_board_boot_normal();
+	if (force_normal)
+		printf("SPL: normal boot forced\n");
+
+#ifdef CONFIG_SPL_OTA_UBOOT_FLAG
+	/*
+	 * "fastboot reboot bootloader": U-Boot leaves FASTBOOT_SIGNATURE in
+	 * the low half of the CPM scratchpad, which survives the reset.
+	 * Clear it so the reset after that boots normally.
+	 */
+	{
+		unsigned int scrpad = cpm_get_scrpad();
+
+		if ((scrpad & 0xffff) == FASTBOOT_SIGNATURE) {
+			cpm_set_scrpad(scrpad & ~0xffff);
+			want_uboot = 1;
+		}
+	}
+
+	if (!force_normal && (want_uboot || spl_board_boot_uboot())) {
+		spl_sfc_nand_load_uboot(partitions);
+		return NULL;
+	}
+#endif
+
+#ifdef CONFIG_SPL_SCRPAD_RECOVERY
+	/*
+	 * "fastboot reboot recovery": RECOVERY_SIGNATURE in the low half of
+	 * the CPM scratchpad boots kernel2 once, like the kernel2 key. It is
+	 * cleared here and the "ota" record is left as it is.
+	 */
+	{
+		unsigned int scrpad = cpm_get_scrpad();
+
+		if ((scrpad & 0xffff) == RECOVERY_SIGNATURE) {
+			cpm_set_scrpad(scrpad & ~0xffff);
+			if (!force_normal) {
+				printf("SPL: recovery requested\n");
+				is_kernel2 = 1;
+				kernel_name = CONFIG_SPL_OS_NAME2;
+			}
+		}
+	}
+#endif
+
+	if (!force_normal && spl_board_boot_kernel2()) {
+		is_kernel2 = 1;
+		kernel_name = CONFIG_SPL_OS_NAME2;
+	}
+
+	if (force_normal) {		/* also over an "ota:kernel2" record */
+		is_kernel2 = 0;
+		kernel_name = CONFIG_SPL_OS_NAME;
 	}
 
 	img_addr = get_part_offset_by_name(partitions, kernel_name);

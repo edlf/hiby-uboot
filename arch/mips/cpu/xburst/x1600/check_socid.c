@@ -39,6 +39,55 @@ static unsigned int read_socid()
 	return val;
 }
 
+#ifdef CONFIG_X1600_SOCID_TABLE
+/*
+ * Known X1600-family SoC IDs (eFuse word 0x2B, low 16 bits).
+ * bits[14]=DDR type, bits[13:11]=DDR vendor, bits[10:8]=DDR capacity,
+ * bits[7:0]=variant.
+ */
+static const struct {
+	unsigned int socid;
+	const char *name;
+} x1600_soc_table[] = {
+	{ 0x1b00, "X1600"   },
+	{ 0x0a00, "X1600E"  },
+	{ 0x4b00, "X1600N"  },
+	{ 0x4a00, "X1600EN" },
+	{ 0x4900, "X1600HN" },
+	{ 0x6500, "X1600MN" },
+	{ 0x1b01, "X1660"   },
+	{ 0x4600, "X1660L"  },
+};
+
+/*
+ * Look up the SoC in x1600_soc_table. On a match, stores the DDR chip ID
+ * in *ddrid and the SoC name in *name (either may be NULL) and returns 0.
+ * Returns -1 for a blank or unknown SoC ID.
+ */
+int check_socid_table(unsigned int *ddrid, const char **name)
+{
+	unsigned int socid = read_socid();
+	int i;
+
+	if (!socid)
+		return -1;
+
+	if (ddrid)
+		*ddrid = DDR_CHIP_ID(socid >> 11 & 0x7, socid >> 14 & 0x1,
+				     socid >> 8 & 0x7);
+
+	for (i = 0; i < ARRAY_SIZE(x1600_soc_table); i++) {
+		if (x1600_soc_table[i].socid == socid) {
+			if (name)
+				*name = x1600_soc_table[i].name;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+#endif /* CONFIG_X1600_SOCID_TABLE */
+
 unsigned int check_socid()
 {
 	unsigned int vendor = 0;

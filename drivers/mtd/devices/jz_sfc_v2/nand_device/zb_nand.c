@@ -4,7 +4,7 @@
 #include "../jz_sfc_common.h"
 #include "nand_common.h"
 
-#define ZB_DEVICES_NUM         1
+#define ZB_DEVICES_NUM         2
 #define TSETUP		5
 #define THOLD		5
 #define	TSHSL_R		20
@@ -43,6 +43,8 @@ static struct jz_sfcnand_base_param zb_param[ZB_DEVICES_NUM] = {
 
 static struct device_id_struct device_id[ZB_DEVICES_NUM] = {
 	DEVICE_ID_STRUCT(0x41, "ZB35Q01A", &zb_param[0]),
+	/* the HiBy R1 stock kernel gives it ZB35Q01A's parameters */
+	DEVICE_ID_STRUCT(0xC1, "ZB35Q01CYIG", &zb_param[0]),
 };
 
 
@@ -52,6 +54,7 @@ static cdt_params_t *zb_get_cdt_params(struct sfc_flash *flash, uint16_t device_
 
 	switch(device_id) {
 		case 0x41:
+		case 0xC1:
 			break;
 		default:
 			printf("device_id err, please check your  device id: device_id = 0x%02x\n", device_id);
@@ -76,6 +79,19 @@ static inline int deal_ecc_status(struct sfc_flash *flash, uint16_t device_id, u
 					return -EBADMSG;
 				default:
 					break;
+			}
+			break;
+		case 0xC1:
+			/* as the HiBy R1 stock kernel */
+			switch((ecc_status >> 4) & 0x3) {
+				case 0x0:
+					return 0x0;
+				case 0x1:
+					return 0x4;
+				case 0x3:
+					return 0x8;
+				case 0x2:
+					return -EBADMSG;
 			}
 			break;
 		default:

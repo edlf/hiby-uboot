@@ -28,6 +28,7 @@ LIB	= $(obj)libcommon.o
 # core
 ifndef CONFIG_SPL_BUILD
 COBJS-y += main.o
+COBJS-$(CONFIG_RAMLOG) += ramlog.o
 COBJS-y += command.o
 COBJS-y += exports.o
 COBJS-y += hash.o

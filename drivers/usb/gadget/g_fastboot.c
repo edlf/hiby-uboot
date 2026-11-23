@@ -50,9 +50,51 @@
 #define DRIVER_VERSION		"usb_fastboot 1.0"
 
 static const char shortname[] = "usb_";
-static const char product[] = "Android 1.0";
-static const char manufacturer[] = "Google, Ingenic";//CONFIG_G_FASTBOOT_MANUFACTURER;
-static const char serialnum[] = "0123456789";
+/* USB string descriptors; a board config may set its own */
+#ifndef CONFIG_G_FASTBOOT_PRODUCT_NAME
+#define CONFIG_G_FASTBOOT_PRODUCT_NAME	"Android 1.0"
+#endif
+#ifndef CONFIG_G_FASTBOOT_MANUFACTURER
+#define CONFIG_G_FASTBOOT_MANUFACTURER	"Google, Ingenic"
+#endif
+static const char product[] = CONFIG_G_FASTBOOT_PRODUCT_NAME;
+static const char manufacturer[] = CONFIG_G_FASTBOOT_MANUFACTURER;
+/*
+ * USB serial number. With CONFIG_FASTBOOT_SERIAL_NAND_UID it is the SPI NAND
+ * unique ID when the chip provides one, so several devices can be told
+ * apart ("fastboot -s"); otherwise this default. 16 hex digits: the string
+ * descriptor (2 + 2 bytes per character) then fits one 64-byte control
+ * packet; the 16-byte UID is folded to 8 (first half XOR second half), so
+ * every byte of it still counts.
+ */
+#define SERIAL_BYTES	8
+
+static char serialnum[2 * SERIAL_BYTES + 1] = "0123456789";
+
+#ifdef CONFIG_FASTBOOT_SERIAL_NAND_UID
+int jz_sfcnand_read_uid(uint8_t *uid);
+
+static void g_fastboot_read_serial(void)
+{
+	uint8_t uid[16];
+	int i;
+
+	if (jz_sfcnand_read_uid(uid)) {
+		printf("fastboot: no NAND unique ID, serial %s\n", serialnum);
+		return;
+	}
+	for (i = 0; i < SERIAL_BYTES; i++)
+		sprintf(serialnum + 2 * i, "%02x",
+			uid[i] ^ uid[i + SERIAL_BYTES]);
+	printf("fastboot: serial %s (NAND unique ID)\n", serialnum);
+}
+#endif
+
+/* For "getvar serialno": the same string the USB descriptor carries. */
+const char *g_fastboot_serial(void)
+{
+	return serialnum;
+}
 
 static struct usb_device_descriptor device_desc = {
 	.bLength = sizeof device_desc,
@@ -146,6 +188,10 @@ static int g_fastboot_bind(struct usb_composite_dev *cdev)
 	int gcnum;
 
 	debug("%s: gadget: 0x%p cdev: 0x%p\n", __func__, gadget, cdev);
+
+#ifdef CONFIG_FASTBOOT_SERIAL_NAND_UID
+	g_fastboot_read_serial();
+#endif
 
 	id = usb_string_id(cdev);
 

@@ -34,6 +34,19 @@
 #include <usb/jz47xx_dwc2_udc.h>
 #include "jz47xx_dwc2_regs.h"
 
+/*
+ * Trace to the RAM log only (fastboot fetch log / oem log), for a board
+ * without a serial console: setup packets, ep0 interrupts, requests,
+ * unusual core interrupts, gaps in polling and a heartbeat with the
+ * endpoint registers.
+ */
+#ifdef CONFIG_JZ_UDC_RAMLOG_TRACE
+#include <ramlog.h>
+#define udc_trace(fmt, args...)	ramlog_printf("usb: " fmt "\n", ##args)
+#else
+#define udc_trace(fmt, args...)	do { } while (0)
+#endif
+
 
 #ifndef DEBUG_RXFIFO
 #define DEBUG_RXFIFO	0x0	//0 : off 1 : epnum 0 2: epnum 1 3:ep_num 0,1
@@ -179,14 +192,52 @@ static void dwc_otg_device_init(void)
 	udc_set_reg(0, GINTSTS_USB_SUSPEND|GINTSTS_USB_RESET|
 			GINTSTS_ENUM_DONE|GINTSTS_USB_EARLYSUSPEND,
 			GINT_MASK);
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+	/* resume too: suspend was unmasked but never handled or cleared */
+	udc_set_reg(0, GINTSTS_WKUPINT, GINT_MASK);
+#endif
 	return;
 }
 
+
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+/*
+ * Start from a clear disconnect. A reboot out of a running USB gadget
+ * (Linux, or a previous U-Boot) can leave the PHY running and D+ pulled
+ * up: the host then keeps talking to a device that no longer answers,
+ * gives up, resets the port and enumerates again, so the device seems to
+ * vanish and come back until it is unplugged once. Here the OTG block is
+ * soft-disconnected and the PHY held in reset (which releases D+) as early
+ * as U-Boot can, and the connect waits until the host has seen it go.
+ */
+#define JZ_UDC_DISCONNECT_MS	250	/* well past the hub's disconnect detection */
+
+static ulong jz_udc_disconnected_at;
+static int jz_udc_enumerated;	/* the host has enumerated us since start */
+
+static void jz_udc_force_disconnect(void)
+{
+	otg_phy_hold_reset();		/* clock on, PHY in reset: D+ released */
+	udc_set_reg(0, DCTL_SOFT_DISCONN, OTG_DCTL);
+	jz_udc_disconnected_at = get_timer(0);
+	udc_trace("disconnected until fastboot starts");
+}
+
+static void jz_udc_wait_disconnect(void)
+{
+	while (get_timer(jz_udc_disconnected_at) < JZ_UDC_DISCONNECT_MS)
+		;
+}
+#endif
 
 static int dwc_udc_init(struct dwc2_udc *dev)
 {
 #ifndef CONFIG_BURNER
 
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+	jz_udc_wait_disconnect();
+	udc_trace("connecting");
+#endif
 	otg_phy_init(DEVICE_ONLY_MODE,CONFIG_SYS_EXTAL);
 
 	dwc_otg_core_reset();
@@ -276,6 +327,9 @@ static void dwc2_giveback_urb(struct dwc2_ep *dep,
 		struct dwc2_request *request, int status)
 {	struct dwc2_udc *dev = the_controller;
 	pr_info("giveback ep%d%s\n",ep_num(dep),ep_is_in(dep)?"in":"out");
+	udc_trace("done %s %u/%u st %d ep0state %x", dep->name,
+		  request->req.actual, request->req.length, status,
+		  dev->ep0state);
 	if (!ep_num(dep) && (dev->ep0state&0xf) == DATA_STAGE) {
 		if (dev->ep0state&USB_DIR_IN)
 			dev->ep0state = STATUS_STAGE;
@@ -410,6 +464,8 @@ static int dwc2_disable_in_endpoint(struct dwc2_ep *dep)
 
 static int dwc2_stop_transfer(struct dwc2_ep *dep)
 {
+	/* nothing is in flight once stopped (OUT did not clear it before) */
+	dep->flags &= ~DWC2_EP_BUSY;
 	if (ep_is_in(dep))
 		return __dwc2_stop_in_transfer(dep);
 	else
@@ -441,7 +497,7 @@ static void dwc2_deactive_endpoint(struct dwc2_ep *dep)
 		dwc2_giveback_urb(dep,request,-ESHUTDOWN);
 	}
 
-	dep->flags &= ~DWC2_EP_ACTIVE;
+	dep->flags &= ~(DWC2_EP_ACTIVE | DWC2_EP_BUSY);
 	return;
 }
 
@@ -567,6 +623,14 @@ static int jz_queue(struct usb_ep *ep, struct usb_request *req, gfp_t gfp_flags)
 	int transfer_idle;
 
 	pr_info("epnum %d queue\n",epnum);
+	/*
+	 * ep0 forgets its list below; a request still linked from an
+	 * earlier control transfer (cut short by a reset, say) is not busy
+	 * then. Refusing it left a control request unanswered: the host
+	 * waited 5 s and reset the device.
+	 */
+	if (!epnum)
+		INIT_LIST_HEAD(&request->queue);
 	if (unlikely(!list_empty(&request->queue))) {
 		printf("epnum %d is busy\n",epnum);
 		return -EBUSY;
@@ -577,8 +641,19 @@ static int jz_queue(struct usb_ep *ep, struct usb_request *req, gfp_t gfp_flags)
 		return -ESHUTDOWN;
 	}
 
-	INIT_LIST_HEAD(&dep->urb_list);
-	transfer_idle = list_empty(&dep->urb_list);
+	/*
+	 * ep0 keeps the original behaviour: forget whatever is listed and
+	 * start (composite reuses one request for every control transfer,
+	 * and a bus reset can leave it listed). The other endpoints used to
+	 * do the same, which dropped queued requests and started a request
+	 * a second time when it was queued from a completion callback: now
+	 * a request is started only when nothing is in flight, and the
+	 * completion paths start the next one.
+	 */
+	if (!epnum)
+		INIT_LIST_HEAD(&dep->urb_list);
+	transfer_idle = list_empty(&dep->urb_list) &&
+			(!epnum || !(dep->flags & DWC2_EP_BUSY));
 
 	req->status = -EINPROGRESS;
 	req->actual = 0;
@@ -587,6 +662,8 @@ static int jz_queue(struct usb_ep *ep, struct usb_request *req, gfp_t gfp_flags)
 	request->dep = dep;
 	list_add_tail(&request->queue,&dep->urb_list);
 
+	udc_trace("queue %s len %u%s", dep->name, req->length,
+		  transfer_idle ? "" : " (waits)");
 	if (transfer_idle)
 		dwc2_start_transfer(dep);
 	return 0;
@@ -698,7 +775,11 @@ int jz_dwc_pullup(struct usb_gadget *gadget, int is_on)
 			dep->desc = 0;
 		}
 		udc_set_reg(0, DCTL_SOFT_DISCONN, OTG_DCTL);
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+		mdelay(200);	/* the hub sees the disconnect well within this */
+#else
 		mdelay(2000); //wait for host disconnect
+#endif
 	}
 }
 
@@ -723,6 +804,9 @@ int jz_udc_probe(void)
 	the_controller->gadget.name = the_controller->name;
 	dwc2_init_endpoint(the_controller, 0);
 	dwc2_init_endpoint(the_controller, 1);
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+	jz_udc_force_disconnect();
+#endif
 	return 0;
 }
 
@@ -732,10 +816,71 @@ static void handle_early_suspend_intr(struct dwc2_udc *dev)
 	udc_write_reg(GINTSTS_USB_EARLYSUSPEND, GINT_STS);
 }
 
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+/*
+ * A bus reset of a device that was already enumerated (the host resets an
+ * idle or suspended device, e.g. when it fails to resume it): start the
+ * device side over, as Linux's dwc2 does, instead of only re-arming ep0.
+ * Left as it was, the host's re-enumeration after such a reset timed out
+ * (~5 s) and it dropped the device, while a fresh enumeration worked.
+ *  - bulk endpoints: stop what is in flight and give the requests back
+ *    (fastboot reads the next command; SET_CONFIGURATION re-enables them)
+ *  - ep0: stop an IN stage, give back its request, back to SETUP
+ *  - flush every FIFO
+ *  - tell the gadget the configuration is gone
+ */
+static void jz_udc_reset_device_state(struct dwc2_udc *dev)
+{
+	struct dwc2_ep *bulk[] = { dev->ep_in_attr[1], dev->ep_out_attr[1],
+				   dev->ep_in_attr[2] };
+	struct dwc2_ep *ep0 = dev->ep_out_attr[0];
+	struct dwc2_request *request;
+	int i;
+
+	udc_trace("reset of an enumerated device, starting over");
+
+	for (i = 0; i < ARRAY_SIZE(bulk); i++) {
+		struct dwc2_ep *dep = bulk[i];
+
+		if (!dep)
+			continue;
+		if (dep->flags & DWC2_EP_ACTIVE)
+			dwc2_stop_transfer(dep);
+		while ((request = next_request(&dep->urb_list)))
+			dwc2_giveback_urb(dep, request, -ECONNRESET);
+		dep->flags &= ~DWC2_EP_BUSY;
+		dep->wait_inxfer_complete = 0;
+	}
+
+	__dwc2_stop_in_transfer(ep0);	/* only acts if an IN stage is enabled */
+	while ((request = next_request(&ep0->urb_list)))
+		dwc2_giveback_urb(ep0, request, -ECONNRESET);
+	ep0->flags &= ~DWC2_EP_BUSY;
+	ep0->wait_inxfer_complete = 0;
+	dev->ep0state = SETUP_STAGE;
+
+	udc_write_reg(0, DIEP_EMPMSK);
+	dwc2_otg_flush_tx_fifo(0x10);	/* all TX FIFOs */
+	dwc2_otg_flush_rx_fifo();
+
+	if (dev->driver && dev->driver->disconnect)
+		dev->driver->disconnect(&dev->gadget);
+
+	jz_udc_enumerated = 0;
+}
+#endif
+
 static void handle_reset_intr(struct dwc2_udc *dev)
 {
 	int i;
 	pr_info("Handle reset intr\n");
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+	udc_trace("reset");
+	if (jz_udc_enumerated)
+		jz_udc_reset_device_state(dev);
+	/* a reset aborts any control transfer: start from a SETUP again */
+	dev->ep0state = SETUP_STAGE;
+#endif
 	/* Step 1: SET NAK for all OUT ep */
 	for (i = 0; i < 2; i++)
 		udc_set_reg(0, DEPCTL_SNAK, DOEP_CTL(i));
@@ -767,6 +912,10 @@ int enum_done_speed_detect(struct dwc2_udc *dev)
 	switch(dsts & DSTS_ENUM_SPEED_MASK) {
 	case DSTS_ENUM_SPEED_HIGH:
 		pr_info("High Speed.\n");
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+		udc_trace("enumerated (high-speed)");
+		jz_udc_enumerated = 1;
+#endif
 		ep_fifo_size = 512;
 		ep_mts = DWC2_HEP_MTS_LIMIT;
 		dev->gadget.speed = USB_SPEED_HIGH;
@@ -774,6 +923,10 @@ int enum_done_speed_detect(struct dwc2_udc *dev)
 	case DSTS_ENUM_SPEED_FULL_30OR60:
 	case DSTS_ENUM_SPEED_FULL_48:
 		pr_info("Full Speed.\n");
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+		udc_trace("enumerated (full-speed)");
+		jz_udc_enumerated = 1;
+#endif
 		ep_fifo_size = 64;
 		ep_mts = DWC2_FEP_MTS_LIMIT;
 		dev->gadget.speed = USB_SPEED_FULL;
@@ -829,6 +982,38 @@ static void parse_setup(struct dwc2_ep *dep)
 					OTG_DCFG);
 			udc_setup_status(1);
 			break;
+#ifdef CONFIG_USB_COMPOSITE_STD_STATUS
+		/*
+		 * Endpoint halt: clearing it resets the data toggle to DATA0,
+		 * as the host does on its side (libusb clear_halt), so the
+		 * next packet is not dropped as a repeat.
+		 */
+		case USB_REQ_CLEAR_FEATURE:
+		case USB_REQ_SET_FEATURE:
+			if ((dev->crq.bRequestType & USB_RECIP_MASK) ==
+			    USB_RECIP_ENDPOINT &&
+			    le16_to_cpu(dev->crq.wValue) == USB_ENDPOINT_HALT) {
+				u16 idx = le16_to_cpu(dev->crq.wIndex);
+				int n = idx & USB_ENDPOINT_NUMBER_MASK;
+				int set = dev->crq.bRequest == USB_REQ_SET_FEATURE;
+				u32 reg = (idx & USB_DIR_IN) ? DIEP_CTL(n) :
+							       DOEP_CTL(n);
+
+				udc_trace("%s halt ep%d%s", set ? "set" : "clear",
+					  n, (idx & USB_DIR_IN) ? "in" : "out");
+				if (n) {
+					if (set)
+						udc_set_reg(0, DEPCTL_STALL, reg);
+					else
+						udc_set_reg(DEPCTL_STALL,
+							    DEPCTL_SETD0PID, reg);
+				}
+				udc_setup_status(1);
+				break;
+			}
+			ret = dev->driver->setup(&dev->gadget, &dev->crq);
+			break;
+#endif
 		default:
 			ret = dev->driver->setup(&dev->gadget, &dev->crq);
 			break;
@@ -837,6 +1022,8 @@ static void parse_setup(struct dwc2_ep *dep)
 		ret = dev->driver->setup(&dev->gadget, &dev->crq);
 	}
 	if (ret) {
+		udc_trace("setup not handled (%d), ep0state %x", ret,
+			  dev->ep0state);
 		//usb_stall_ep0(dep);
 		return;
 	}
@@ -855,6 +1042,7 @@ static void udc_fetch_data_packet(struct dwc2_ep *dep, int flush_fifo)
 	int fifo_count = (rxsts_pop&GRXSTSP_BYTE_CNT_MASK) >> GRXSTSP_BYTE_CNT_BIT;
 
 	if (unlikely(!request && fifo_count != 0 && epnum != 0 && !!flush_fifo)) {
+		udc_trace("ep%d out %d bytes, no request", epnum, fifo_count);
 		printf("no request happen\n");
 		return;
 	}
@@ -914,6 +1102,10 @@ static void udc_fetch_setup_packet(struct dwc2_ep *dep)
 	buf[0] = udc_read_reg(EP_FIFO(epnum));
 	buf[1] = udc_read_reg(EP_FIFO(epnum));
 	the_controller->ep0state = SETUP_STAGE;
+	udc_trace("setup %02x %02x val %04x idx %04x len %u",
+		  dev->crq.bRequestType, dev->crq.bRequest,
+		  le16_to_cpu(dev->crq.wValue), le16_to_cpu(dev->crq.wIndex),
+		  le16_to_cpu(dev->crq.wLength));
 	pr_info("setup recv requesttype %x request %x\n",dev->crq.bRequestType,
 			dev->crq.bRequest);
 	return;
@@ -1005,13 +1197,17 @@ void inepx_transfer_complete(struct dwc2_ep *dep, int status)
 	if (request->req.actual >= request->req.length)
 		is_last = 1;
 
+	/* this hardware transfer is over; giveback's callback may queue */
+	dep->flags &= ~DWC2_EP_BUSY;
 	if (is_last && need_send_zlp(request)) {
 		request->zlp_transfered = true;
 	} else if (is_last) {
 		udc_set_reg((1 << epnum),0,DIEP_EMPMSK);
 		dwc2_giveback_urb(dep,request,status);
 	}
-	dwc2_start_transfer(dep);
+	/* continue, or start what is queued, unless the callback already did */
+	if (!(dep->flags & DWC2_EP_BUSY))
+		dwc2_start_transfer(dep);
 	dep->wait_inxfer_complete = 0;
 }
 
@@ -1090,6 +1286,10 @@ void handle_inep_intr(struct dwc2_udc *dev)
 		pr_info("epnum %d in intr %x aint%x\n",epnum,ep_intr, intr);
 		ep_msk = udc_read_reg(DIEP_MASK);
 		ep_pending = (ep_intr&ep_msk);
+		if (!epnum || (ep_pending & DEP_TIME_OUT))
+			udc_trace("ep%d in int %x (masked %x) siz %08x",
+				  epnum, ep_intr, ep_pending,
+				  udc_read_reg(DIEP_SIZE(epnum)));
 
 		if (ep_pending & DEP_XFER_COMP) {
 			if (ep_num(dep))
@@ -1176,9 +1376,12 @@ void outepx_transfer_complete(struct dwc2_ep *dep)
 	if (request->req.actual >= request->req.length)
 		is_last = 1;
 
+	/* this hardware transfer is over; giveback's callback may queue */
+	dep->flags &= ~DWC2_EP_BUSY;
 	if (is_last)
 		dwc2_giveback_urb(dep, request, 0);
-	else
+	/* continue, or start what is queued, unless the callback already did */
+	if (!(dep->flags & DWC2_EP_BUSY))
 		dwc2_start_transfer(dep);
 	return;
 }
@@ -1204,6 +1407,10 @@ int handle_outep_intr(struct dwc2_udc *dev)
 		pr_info("===== epnum %d out intr %x ======\n",epnum,ep_intr);
 		ep_msk = udc_read_reg(DOEP_MASK);
 		ep_pending = (ep_intr&ep_msk);
+		if (!epnum)
+			udc_trace("ep0 out int %x (masked %x) siz %08x state %x",
+				  ep_intr, ep_pending, udc_read_reg(DOEP_SIZE(0)),
+				  dev->ep0state);
 
 		if (ep_pending & DEP_XFER_COMP) {
 			if (!epnum) {
@@ -1224,6 +1431,7 @@ int handle_outep_intr(struct dwc2_udc *dev)
 			udc_write_reg(DEP_SETUP_PHASE_DONE, DOEP_INT(epnum));
 			if (DEP_B2B_SETUP_RECV & ep_intr) {
 				pr_err("back to back received \n");
+				udc_trace("back to back setup");
 				udc_write_reg(DEP_B2B_SETUP_RECV, DOEP_INT(epnum));
 			}
 			parse_setup(dep);
@@ -1239,8 +1447,25 @@ int udc_irq(void)
 	u32 gintmsk = udc_read_reg(GINT_MASK);
 	u32 pending = intsts & gintmsk;
 
+	if (pending & ~(GINTSTS_IEP_INTR | GINTSTS_OEP_INTR |
+			GINTSTS_RXFIFO_NEMPTY))
+		udc_trace("irq %08x (sts %08x) dsts %08x", pending, intsts,
+			  udc_read_reg(OTG_DSTS));
+
 	if (pending & GINTSTS_USB_EARLYSUSPEND)
 		handle_early_suspend_intr(dev);
+
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+	/* the core resumes by itself: only clear (and trace) these */
+	if (pending & GINTSTS_USB_SUSPEND) {
+		udc_write_reg(GINTSTS_USB_SUSPEND, GINT_STS);
+		udc_trace("suspend");
+	}
+	if (pending & GINTSTS_WKUPINT) {
+		udc_write_reg(GINTSTS_WKUPINT, GINT_STS);
+		udc_trace("resume");
+	}
+#endif
 
 	if (pending & GINTSTS_USB_RESET)
 		handle_reset_intr(dev);
@@ -1320,9 +1545,80 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
 }
 
 
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+/*
+ * Cable plugged in while fastboot already runs: the core connected at
+ * start with no cable and nothing reacted to the cable afterwards, which
+ * made the first enumeration unreliable (a replug fixed it). On an
+ * insertion seen before the host has enumerated the device, do a software
+ * replug: drop off the bus long enough for the host to notice, then
+ * connect again.
+ *
+ * Only before the first enumeration: while the host keeps the bus
+ * suspended (autosuspend) the session bit can read 0 with the cable still
+ * in, and replugging on its return made the device vanish and come back
+ * whenever the host resumed it ("fastboot devices" saw nothing). Only a
+ * change after the first reading acts, so a session bit that does not
+ * work here changes nothing.
+ */
+static void jz_udc_check_cable(void)
+{
+	static int last = -1;
+	int now = !!(udc_read_reg(GOTG_CTL) & GOTGCTL_BSESVLD);
+
+	if (now == last)
+		return;
+	if (last >= 0)
+		udc_trace("session %s", now ? "valid" : "lost");
+	if (last == 0 && now && !jz_udc_enumerated) {
+		udc_set_reg(0, DCTL_SOFT_DISCONN, OTG_DCTL);
+		mdelay(150);
+		udc_set_reg(DCTL_SOFT_DISCONN, 0, OTG_DCTL);
+		udc_trace("reconnected");
+	}
+	last = now;
+}
+#endif
+
+#ifdef CONFIG_JZ_UDC_RAMLOG_TRACE
+/*
+ * A gap in polling (the main loop busy elsewhere, or stuck) and, every
+ * 5 s, the state of the core and of ep0/ep1: if the board stops
+ * answering, the last heartbeat shows what the endpoints looked like.
+ */
+static void jz_udc_trace_poll(void)
+{
+	static ulong last_poll, last_hb;
+	ulong now = get_timer(0);
+
+	if (last_poll && now - last_poll > 100)
+		udc_trace("poll gap %lu ms", now - last_poll);
+	last_poll = now;
+	if (now - last_hb < 5000)
+		return;
+	last_hb = now;
+	udc_trace("hb sts %08x msk %08x dsts %08x dctl %08x otg %08x",
+		  udc_read_reg(GINT_STS), udc_read_reg(GINT_MASK),
+		  udc_read_reg(OTG_DSTS), udc_read_reg(OTG_DCTL),
+		  udc_read_reg(GOTG_CTL));
+	udc_trace("hb ep0 i %08x/%08x o %08x/%08x ep1 i %08x o %08x/%08x",
+		  udc_read_reg(DIEP_CTL(0)), udc_read_reg(DIEP_SIZE(0)),
+		  udc_read_reg(DOEP_CTL(0)), udc_read_reg(DOEP_SIZE(0)),
+		  udc_read_reg(DIEP_CTL(1)),
+		  udc_read_reg(DOEP_CTL(1)), udc_read_reg(DOEP_SIZE(1)));
+}
+#endif
+
 int usb_gadget_handle_interrupts(void)
 {
-	if (usb_poll_active == true)
+	if (usb_poll_active == true) {
+#ifdef CONFIG_JZ_UDC_RAMLOG_TRACE
+		jz_udc_trace_poll();
+#endif
+#ifdef CONFIG_JZ_UDC_CLEAN_START
+		jz_udc_check_cable();
+#endif
 		udc_irq();
+	}
 	return 0;
 }
