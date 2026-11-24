@@ -30,9 +30,9 @@ extern struct jz_sfcnand_burner_param jz_sfc_nand_burner_param;
 struct partition_info partition_info[PARTITION_NUM];
 
 struct board_info board_info = {
-	.product	= "hiby_r1",
+	.product	= CONFIG_FASTBOOT_BOARD_NAME,
 	.variant	= "x1600",
-	.hardware_ver	= "R1",
+	.hardware_ver	= CONFIG_HIBY_HARDWARE_VER,
 	.max_download_size = 0,		/* set in hiby_r1_fastboot_init() */
 };
 
@@ -150,11 +150,11 @@ static ulong led_since;
 
 static void led_set(int lit)
 {
-#ifdef CONFIG_HIBY_R1_LED_RED_GPIO
-	const int v = lit ? CONFIG_HIBY_R1_LED_ON : !CONFIG_HIBY_R1_LED_ON;
+#ifdef CONFIG_HIBY_LED_RED_GPIO
+	const int v = lit ? CONFIG_HIBY_LED_ON : !CONFIG_HIBY_LED_ON;
 
-	gpio_direction_output(CONFIG_HIBY_R1_LED_RED_GPIO, v);
-	gpio_direction_output(CONFIG_HIBY_R1_LED_BLUE_GPIO, v);
+	gpio_direction_output(CONFIG_HIBY_LED_RED_GPIO, v);
+	gpio_direction_output(CONFIG_HIBY_LED_BLUE_GPIO, v);
 #endif
 	led_lit = lit;
 	led_since = get_timer(0);

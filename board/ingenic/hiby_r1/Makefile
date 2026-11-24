@@ -25,7 +25,7 @@ include $(TOPDIR)/config.mk
 LIB	= $(obj)lib$(BOARD).o
 
 COBJS-y	:= board.o
-COBJS-$(CONFIG_HIBY_R1_ADC_KEY) += adc_key.o
+COBJS-$(CONFIG_HIBY_ADC_KEY) += adc_key.o
 ifndef CONFIG_SPL_BUILD
 COBJS-$(CONFIG_CMD_FASTBOOT) += fastboot.o
 endif

@@ -65,4 +65,5 @@ enum otg_mode_t {
 	HOST_ONLY_MODE,
 };
 void otg_phy_init(enum otg_mode_t mode,unsigned extclk);
+void otg_phy_hold_reset(void);
 #endif /* __CLK_H__ */

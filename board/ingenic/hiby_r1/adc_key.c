@@ -143,7 +143,7 @@ static void adc_init(void)
 /* Returns the channel voltage in mV, or -1 on error. */
 int hiby_r1_adc_key_read_mv(void)
 {
-	const unsigned int ch = CONFIG_HIBY_R1_ADC_KEY_CHANNEL;
+	const unsigned int ch = CONFIG_HIBY_ADC_KEY_CHANNEL;
 	int raw;
 
 	adc_init();
@@ -154,7 +154,7 @@ int hiby_r1_adc_key_read_mv(void)
 	if (adc_enable_channel(ch) < 0) {
 		raw = -1;
 	} else {
-		mdelay(CONFIG_HIBY_R1_ADC_KEY_SAMPLE_MS);
+		mdelay(CONFIG_HIBY_ADC_KEY_SAMPLE_MS);
 		raw = adc_read_channel(ch);
 	}
 
@@ -166,7 +166,7 @@ int hiby_r1_adc_key_read_mv(void)
 	if (raw < 0)
 		return -1;
 
-	return raw * CONFIG_HIBY_R1_ADC_VREF_MV / 4096;
+	return raw * CONFIG_HIBY_ADC_VREF_MV / 4096;
 }
 
 /* Sample once per boot; both hooks below share the reading. */
@@ -186,29 +186,29 @@ int spl_board_boot_kernel2(void)
 {
 	int mv = adc_key_mv();
 
-	return mv >= CONFIG_HIBY_R1_ADC_KEY_MIN_MV &&
-	       mv <= CONFIG_HIBY_R1_ADC_KEY_MAX_MV;
+	return mv >= CONFIG_HIBY_ADC_KEY_MIN_MV &&
+	       mv <= CONFIG_HIBY_ADC_KEY_MAX_MV;
 }
 
-#ifdef CONFIG_HIBY_R1_NORMAL_KEY_MIN_MV
+#ifdef CONFIG_HIBY_NORMAL_KEY_MIN_MV
 /* Overrides the weak hook in common/spl/spl_sfc_nand_v2.c */
 int spl_board_boot_normal(void)
 {
 	int mv = adc_key_mv();
 
-	return mv >= CONFIG_HIBY_R1_NORMAL_KEY_MIN_MV &&
-	       mv <= CONFIG_HIBY_R1_NORMAL_KEY_MAX_MV;
+	return mv >= CONFIG_HIBY_NORMAL_KEY_MIN_MV &&
+	       mv <= CONFIG_HIBY_NORMAL_KEY_MAX_MV;
 }
 #endif
 
-#ifdef CONFIG_HIBY_R1_FASTBOOT_KEY_MIN_MV
+#ifdef CONFIG_HIBY_FASTBOOT_KEY_MIN_MV
 /* Overrides the weak hook in common/spl/spl_sfc_nand_v2.c */
 int spl_board_boot_uboot(void)
 {
 	int mv = adc_key_mv();
 
-	return mv >= CONFIG_HIBY_R1_FASTBOOT_KEY_MIN_MV &&
-	       mv <= CONFIG_HIBY_R1_FASTBOOT_KEY_MAX_MV;
+	return mv >= CONFIG_HIBY_FASTBOOT_KEY_MIN_MV &&
+	       mv <= CONFIG_HIBY_FASTBOOT_KEY_MAX_MV;
 }
 #endif
 

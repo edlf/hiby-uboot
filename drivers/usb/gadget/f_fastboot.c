@@ -72,8 +72,15 @@ static int fb_find_partition(const char *name);
 static const struct partition_info *fb_fetch_part(const char *name);
 static void fb_set_busy(int busy);
 extern const char *g_fastboot_serial(void);	/* g_fastboot.c */
-/* "version-bootloader": the build, not just the U-Boot release */
-#define FB_BOOTLOADER_VER	PLAIN_VERSION "-" CONFIG_SYS_BOARD " " \
+/*
+ * "version-bootloader": the build, not just the U-Boot release. Boards
+ * that share a board directory name themselves with
+ * CONFIG_FASTBOOT_BOARD_NAME.
+ */
+#ifndef CONFIG_FASTBOOT_BOARD_NAME
+#define CONFIG_FASTBOOT_BOARD_NAME	CONFIG_SYS_BOARD
+#endif
+#define FB_BOOTLOADER_VER	PLAIN_VERSION "-" CONFIG_FASTBOOT_BOARD_NAME " " \
 				U_BOOT_DATE " " U_BOOT_TIME
 #endif
 static unsigned int fastboot_flash_session_id;

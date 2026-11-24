@@ -1,7 +1,7 @@
-# HiBy R1 U-Boot
+# HiBy R1 / R3 Pro II U-Boot
 
-U-Boot for the HiBy R1 (Ingenic X1600, SPI NAND), built from Ingenic's
-X1600 SDK (U-Boot 2013.07). It replaces the stock boot loader in the
+U-Boot for the HiBy R1 and R3 Pro II (Ingenic X1600, SPI NAND), built
+from Ingenic's X1600 SDK (U-Boot 2013.07). It replaces the stock boot loader in the
 `uboot` partition and boots the stock firmware exactly as before, and adds
 a USB fastboot mode for flashing, dumping and recovering the device.
 
@@ -10,6 +10,33 @@ and loads Linux straight from NAND (falcon mode). This build keeps that
 path for normal boots, with the stock DDR tuning, NAND chip support and
 OTA/recovery handling matched to the stock SPL, and stores a full U-Boot
 right after the SPL that runs only when fastboot is asked for.
+
+## Boards
+
+| | R1 | R3 Pro II |
+| --- | --- | --- |
+| Build target | `hiby_r1_xImage_sfc_nand` | `hiby_r3proii_xImage_sfc_nand` |
+| Config | `include/configs/hiby_r1.h` | `include/configs/hiby_r3proii.h` |
+| Play/Pause (fastboot) | 0 mV | 0 mV |
+| Volume down (normal, forced) | 1000 mV | 1115 mV |
+| Volume up (recovery) | 1650 mV | 1700 mV |
+| Fastboot LED | purple (red + blue GPIOs) | none (SGM31324 LED driver on I2C) |
+| USB | `32bb:0101`, "HiBy R1" | `32bb:0101`, "HiBy R3 Pro II" |
+| Status | in use | **built, never run; do not install yet** |
+
+Both share everything else: the board code (`board/ingenic/hiby_r1`), the
+settings in `include/configs/hiby_x1600_common.h`, the OTA and recovery
+scheme, the console (UART2, 3 Mbaud) and HiBy's USB IDs. The R3 Pro II
+values come from its stock firmware 1.4 (`r3proii(v1.4).upt`: key
+ladder, LED and USB scripts, device tree); their SPLs differ only in the
+Volume down window.
+
+> [!CAUTION]
+> The R3 Pro II board has not been compared with the R3 Pro II's own stock
+> loader (its `uboot` partition, which the update file does not contain):
+> DDR setup, NAND chips, kernel command line and partition table are
+> assumed to be the R1's. Until that is checked, and a `-withparts` image
+> is made from its partition table, do not install it.
 
 ## Contents
 
@@ -24,15 +51,16 @@ right after the SPL that runs only when fastboot is asked for.
 
 ## 1. What it does at power-on
 
-The SPL reads the keys once (the ADC key ladder, as the stock SPL does)
-and the `ota` partition, then picks one of three paths:
+The SPL reads the keys once (the ADC key ladder, as the stock SPL does;
+the voltages are per board, see [Boards](#boards)) and the `ota`
+partition, then picks one of three paths:
 
 | Key held at power-on | What boots |
 | --- | --- |
 | (none) | Normal system: kernel + rootfs, or kernel2 + rootfs2 when HiBy's OTA record says so |
 | Volume down | Normal system, forced: overrides the OTA record, a fastboot request and a reboot target |
 | Volume up | Recovery: kernel2 + rootfs2 (as stock) |
-| Play/Pause | Fastboot (LED purple) |
+| Play/Pause | Fastboot (LED purple on the R1) |
 
 HiBy's scheme is normal + recovery, not A/B: kernel/rootfs is the system,
 kernel2/rootfs2 the recovery that installs updates. Page 0 of the `ota`
@@ -78,8 +106,10 @@ The commands in this README are run from that folder.
 | `u-boot-hiby_r1.bin` | SPL + U-Boot, partition table area left blank. For `fastboot flash uboot`: U-Boot then keeps the table already in flash. **The image for updates.** |
 | `u-boot-hiby_r1-withparts.bin` | The same with the stock partition table at 0x5800 (copied from the stock image). For writing the partition directly: the first install from Linux, a flash programmer, Ingenic's USB cloner. |
 | `u-boot-hiby_r1-nouid.bin`, `u-boot-hiby_r1-nouid-withparts.bin` | The same without reading the NAND unique ID for the USB serial number (it is then `0123456789`). A fallback in case the ID read misbehaves on some NAND chip. |
+| `u-boot-hiby_r3proii.bin`, `u-boot-hiby_r3proii-nouid.bin` | The same for the R3 Pro II (see the caution under [Boards](#boards)). No `-withparts` copies yet: they need the R3 Pro II's stock partition table. |
 
-All of them are about 410 KiB and fit the 512 KiB `uboot` partition.
+All of them are about 410 KiB and fit the 512 KiB `uboot` partition. The
+commands below use the R1's file names; on the R3 Pro II, use its own.
 
 ## 3. Installing
 
@@ -171,12 +201,12 @@ or write the mtd0 backup from Linux as in
   (`mtd5` is `ota`, check `/proc/mtd`.) U-Boot clears the request when it
   starts, keeping HiBy's record in page 0, so the next boot is normal.
 
-In fastboot the LED is purple; it blinks while flashing, erasing or
-fetching. `fastboot reboot` leaves it.
+In fastboot the R1's LED is purple; it blinks while flashing, erasing or
+fetching. `fastboot reboot` leaves it. The R3 Pro II has no fastboot LED.
 
-The device shows up as USB `32bb:0101`, "HiBy R1" (the R1's own IDs), with
-the NAND unique ID as serial number, so several R1s can be told apart
-with `fastboot -s`. On Linux, fastboot needs access to the device, for
+The device shows up as USB `32bb:0101` (HiBy's IDs), "HiBy R1" or
+"HiBy R3 Pro II", with the NAND unique ID as serial number, so several
+players can be told apart with `fastboot -s`. On Linux, fastboot needs access to the device, for
 example with a udev rule:
 
 ```
@@ -220,8 +250,8 @@ of partitions on an `INFO` line before it.
 | Variable | Value |
 | --- | --- |
 | `version-bootloader` | U-Boot version, board, build date and time |
-| `version-hardware` | `R1` |
-| `product` | `hiby_r1` |
+| `version-hardware` | `R1` / `R3PROII` |
+| `product` | `hiby_r1` / `hiby_r3proii` |
 | `variant` | `x1600` |
 | `serialno` | NAND unique ID, 16 hex digits |
 | `max-download-size` | Largest flash image (about 50 MiB) |
@@ -275,7 +305,7 @@ U-Boot takes the kernel out of it (header versions 0 to 4) and ignores a
 ramdisk. A bare uImage is taken as well.
 
 Before the kernel starts, the device leaves the USB bus, as on a reboot,
-and turns the LED off.
+and turns the LED off (R1).
 
 ## 5. Safety checks when flashing
 
@@ -300,10 +330,12 @@ The partition table of a `uboot` image:
 
 `board/ingenic/hiby_r1`, `common/spl/spl_sfc_nand_v2.c`
 
-- New board `hiby_r1` (`boards.cfg` target `hiby_r1_xImage_sfc_nand`),
-  UART2 at 3 Mbaud as stock.
+- New boards `hiby_r1` and `hiby_r3proii` (`boards.cfg` targets
+  `hiby_r1_xImage_sfc_nand`, `hiby_r3proii_xImage_sfc_nand`), sharing the
+  board code in `board/ingenic/hiby_r1` and the settings in
+  `include/configs/hiby_x1600_common.h`; UART2 at 3 Mbaud as stock.
 - ADC key driver (`adc_key.c`): SADC channel 0, Volume down / Volume up /
-  Play/Pause windows as in [1.](#1-what-it-does-at-power-on)
+  Play/Pause windows per board (see [Boards](#boards)).
 - SPL boot selection: OTA record, fastboot request, CPM scratchpad
   signatures from "reboot bootloader" (`0x0666`) and "reboot recovery"
   (`0x1a1a`), and the keys, in the order given in
@@ -353,9 +385,10 @@ The partition table of a `uboot` image:
 - Clear `FAIL` reasons; several SDK bugs fixed (an unanswered unknown
   command, a hang after a failed download, an uninitialised name in
   erase, a missing final `OKAY` in `getvar all`).
-- LED: purple in fastboot, blinking during long operations.
-- USB IDs `32bb:0101`; names "HiBy" / "R1" for the device and "HiBy R1"
-  for the fastboot interface (the SDK said "Google" in both places).
+- LED: purple in fastboot, blinking during long operations (R1).
+- USB IDs `32bb:0101`; names "HiBy" / "R1" (or "R3 Pro II") for the
+  device and "HiBy R1" (or "HiBy R3 Pro II") for the fastboot interface
+  (the SDK said "Google" in both places).
 
 ### USB device controller
 
@@ -376,7 +409,8 @@ The partition table of a `uboot` image:
 
 ### Debugging (off by default)
 
-- RAM log (`common/ramlog.c`): with `CONFIG_RAMLOG` in `hiby_r1.h`,
+- RAM log (`common/ramlog.c`): with `CONFIG_RAMLOG` in
+  `hiby_x1600_common.h`,
   everything U-Boot prints plus a USB trace is kept in RAM, survives a
   warm reset, and can be read with `fastboot fetch log` /
   `fastboot oem log` (and `lastlog` for the run before the reset). Meant
@@ -392,7 +426,12 @@ still runs.
 The ROM chooses the boot source from two pins at reset
 (`boot_sel = PC28 << 1 | PC27`: 1 = SPI NAND, the normal setting;
 3 = USB). With no working SPL in flash, reaching USB boot means driving
-those pins, which has not been tried on the R1.
+those pins.
+
+On both players PC28 is a key (Next on the R1, Previous on the R3 Pro II;
+the stock key scripts give it `active_level=1`, high when pressed). Held
+at power-on, it should therefore give boot_sel 3, the ROM's USB boot,
+without opening the player. This has not been tried.
 
 ## 8. Building
 
@@ -401,26 +440,34 @@ export PATH=$HOME/mips-gcc720-glibc229_br_linux_r5.0.2-gcc720-fp32/bin:$PATH
 export CROSS_COMPILE=mips-linux-gnu-
 cd u-boot
 make distclean
-make hiby_r1_xImage_sfc_nand
+make hiby_r1_xImage_sfc_nand        # or hiby_r3proii_xImage_sfc_nand
 ```
 
 The result is `u-boot-with-spl.bin` (SPL padded to 26624 bytes, then
 U-Boot). The `-withparts` copy gets bytes 0x5800–0x5bff (the partition
 table) from the stock image, or from a dump of the stock `uboot`
-partition (mtd0), which holds the same table. For the `-nouid` images,
-comment out `CONFIG_FASTBOOT_SERIAL_NAND_UID` in
-`include/configs/hiby_r1.h`.
+partition (mtd0), which holds the same table; each player needs its own.
+For the `-nouid` images, comment out `CONFIG_FASTBOOT_SERIAL_NAND_UID` in
+`include/configs/hiby_x1600_common.h`.
 
 With `make -j`, the SDK's Makefile sometimes stops with "multiple target
 patterns" (a race in its dependency files): run `make distclean` and
 build again.
 
-Settings worth knowing in `include/configs/hiby_r1.h`:
+Settings worth knowing. Per board, in `hiby_r1.h` / `hiby_r3proii.h`:
 
 | Setting | What it sets |
 | --- | --- |
-| `CONFIG_HIBY_R1_*_KEY_MIN_MV` / `MAX_MV` | Key windows (mV) |
-| `CONFIG_HIBY_R1_LED_*` | LED pins, and the level that lights them |
+| `CONFIG_HIBY_ADC_KEY_MIN_MV` / `MAX_MV` | Recovery key window (mV) |
+| `CONFIG_HIBY_FASTBOOT_KEY_*`, `CONFIG_HIBY_NORMAL_KEY_*` | Fastboot and forced-normal key windows (mV) |
+| `CONFIG_HIBY_LED_*` | LED pins, and the level that lights them (R1) |
+| `CONFIG_FASTBOOT_BOARD_NAME`, `CONFIG_HIBY_HARDWARE_VER` | `getvar product` and version string, `getvar version-hardware` |
+| `CONFIG_G_FASTBOOT_PRODUCT_NAME`, `CONFIG_G_FASTBOOT_INTERFACE_NAME` | USB names |
+
+Shared, in `hiby_x1600_common.h`:
+
+| Setting | What it sets |
+| --- | --- |
 | `CONFIG_FASTBOOT_SERIAL_NAND_UID` | Serial number from the NAND ID |
 | `CONFIG_FASTBOOT_BOOTROM_SIZE` | `bootrom` fetch size |
 | `CONFIG_RAMLOG` | The RAM log (off) |

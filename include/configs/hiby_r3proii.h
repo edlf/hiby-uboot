@@ -1,0 +1,54 @@
+/*
+ * HiBy R3 Pro II (Ingenic X1600) configuration
+ *
+ * What is the R3 Pro II's own; the rest is shared with the other HiBy
+ * X1600 players in hiby_x1600_common.h, and the board code with the R1
+ * (board/ingenic/hiby_r1). See README.md (U-Boot top directory).
+ *
+ * Taken from the stock firmware 1.4 (r3proii(v1.4).upt): the same OTA
+ * scheme as the R1 (kernel2/rootfs2 recovery, "ota:kernel2" record), the
+ * same console UART and USB IDs; its own key ladder and LEDs.
+ *
+ * Not yet compared with the R3 Pro II's stock SPL (its "uboot"
+ * partition): DDR setup, NAND chips, kernel command line and partition
+ * table are assumed to match the R1's.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ */
+
+#ifndef __HIBY_R3PROII_H__
+#define __HIBY_R3PROII_H__
+
+/* Names: "getvar product" / version string, "getvar version-hardware", USB */
+#define CONFIG_FASTBOOT_BOARD_NAME		"hiby_r3proii"
+#define CONFIG_HIBY_HARDWARE_VER		"R3PROII"
+#define CONFIG_G_FASTBOOT_PRODUCT_NAME		"R3 Pro II"
+#define CONFIG_G_FASTBOOT_INTERFACE_NAME	"HiBy R3 Pro II"
+
+/*
+ * Keys at power-on, on the stock ADC ladder (/module_driver/keyboard_adc.sh:
+ * channel 0, 3300 mV idle, keys matched within 100 mV):
+ *   Play/Pause    0 mV   fastboot
+ *   Volume down 1115 mV  normal kernel, forced
+ *   Volume up   1700 mV  kernel2 (recovery)
+ *   Next        2200 mV  (not used at power-on)
+ */
+#define CONFIG_HIBY_ADC_KEY_MIN_MV		1600	/* Volume up */
+#define CONFIG_HIBY_ADC_KEY_MAX_MV		1800
+#define CONFIG_HIBY_FASTBOOT_KEY_MIN_MV		0	/* Play/Pause */
+#define CONFIG_HIBY_FASTBOOT_KEY_MAX_MV		100
+#define CONFIG_HIBY_NORMAL_KEY_MIN_MV		1015	/* Volume down */
+#define CONFIG_HIBY_NORMAL_KEY_MAX_MV		1215
+
+/*
+ * No fastboot LED: the R3 Pro II's LEDs hang off an SGM31324 LED driver
+ * on I2C bus 0 (/module_driver/leds_sgm31324_add.sh), not plain GPIOs,
+ * and U-Boot has no driver for it.
+ */
+
+#include "hiby_x1600_common.h"
+
+#endif /* __HIBY_R3PROII_H__ */
