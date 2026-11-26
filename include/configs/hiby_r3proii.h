@@ -17,8 +17,8 @@
  *    whatever the eFuse SoC ID or the burned DDR ID say, as stock.
  *  - SPI NAND: every chip the stock SPL knows is in the shared table.
  *  - Kernel command lines, the OTA record: the same as the R1's.
- *  - Partition table: the R1's layout, but the recovery root fs is
- *    called "rootfs2" (partitions/r3proii.txt).
+ *  - Partition table: the same as the R1's, recovery root fs "rootfs2"
+ *    (partitions/r3proii.txt).
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as

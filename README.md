@@ -41,8 +41,8 @@ contain it; U-Boot SPL 2013.07-g2a44fbe of 30 Aug 2025):
   match the stock SPL's field for field.
 - SPI NAND: all 50 chips the stock SPL knows are in the shared table.
 - Kernel command lines and the OTA record are the R1's.
-- Partition table: the R1's layout, with the recovery root fs called
-  `rootfs2` (`partitions/r3proii.txt`).
+- Partition table: the same as the R1's (`partitions/r3proii.txt`,
+  `partitions/r1.txt`), recovery root fs `rootfs2`.
 
 > [!CAUTION]
 > It has not run on an R3 Pro II yet. For the first install, have a way
@@ -93,8 +93,11 @@ alone.
 
 ### Partitions
 
-From the burner partition table at 0x5800 in `uboot`. The second
-`rootfs` is called `rootfs2` in fastboot.
+From the burner partition table at 0x5800 in `uboot`
+(`partitions/<model>.txt`, written into the `-withparts` images). The
+recovery root fs is `rootfs2` on both players. A table dumped from an R1
+may still name it a second `rootfs`; fastboot shows that one as `rootfs2`
+too, and the kernel and the recovery treat the two names alike.
 
 | Name | Offset | Size | Contents |
 | --- | --- | --- | --- |
