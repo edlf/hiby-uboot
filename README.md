@@ -28,15 +28,25 @@ Both share everything else: the board code (`board/ingenic/hiby_r1`), the
 settings in `include/configs/hiby_x1600_common.h`, the OTA and recovery
 scheme, the console (UART2, 3 Mbaud) and HiBy's USB IDs. The R3 Pro II
 values come from its stock firmware 1.4 (`r3proii(v1.4).upt`: key
-ladder, LED and USB scripts, device tree); their SPLs differ only in the
-Volume down window.
+ladder, LED and USB scripts, device tree); their SPLs differ in the
+Volume down window and the DDR table (below).
+
+The R3 Pro II board has been compared with the R3 Pro II's own stock
+loader, from a dump of its `uboot` partition (the update file does not
+contain it; U-Boot SPL 2013.07-g2a44fbe of 30 Aug 2025):
+
+- DDR: the stock SPL knows one chip, LPDDR2 `M54D5121632A` (64 MiB, the
+  X1600E's own), and no SoC ID table. The R3 Pro II board is built the
+  same way (the SDK's `CONFIG_X1600E_DDR`), and its DDR register values
+  match the stock SPL's field for field.
+- SPI NAND: all 50 chips the stock SPL knows are in the shared table.
+- Kernel command lines and the OTA record are the R1's.
+- Partition table: the R1's layout, with the recovery root fs called
+  `rootfs2` (`partitions/r3proii.txt`).
 
 > [!CAUTION]
-> The R3 Pro II board has not been compared with the R3 Pro II's own stock
-> loader (its `uboot` partition, which the update file does not contain):
-> DDR setup, NAND chips, kernel command line and partition table are
-> assumed to be the R1's. Until that is checked, and a `-withparts` image
-> is made from its partition table, do not install it.
+> It has not run on an R3 Pro II yet. For the first install, have a way
+> back ready (Ingenic's USB boot mode, [7.](#7-recovery-the-boot-roms-usb-mode)).
 
 ## Contents
 
@@ -106,7 +116,7 @@ The commands in this README are run from that folder.
 | `u-boot-hiby_r1.bin` | SPL + U-Boot, partition table area left blank. For `fastboot flash uboot`: U-Boot then keeps the table already in flash. **The image for updates.** |
 | `u-boot-hiby_r1-withparts.bin` | The same with the stock partition table at 0x5800 (copied from the stock image). For writing the partition directly: the first install from Linux, a flash programmer, Ingenic's USB cloner. |
 | `u-boot-hiby_r1-nouid.bin`, `u-boot-hiby_r1-nouid-withparts.bin` | The same without reading the NAND unique ID for the USB serial number (it is then `0123456789`). A fallback in case the ID read misbehaves on some NAND chip. |
-| `u-boot-hiby_r3proii.bin`, `u-boot-hiby_r3proii-nouid.bin` | The same for the R3 Pro II (see the caution under [Boards](#boards)). No `-withparts` copies yet: they need the R3 Pro II's stock partition table. |
+| `u-boot-hiby_r3proii.bin`, `u-boot-hiby_r3proii-nouid.bin` and their `-withparts` copies | The same for the R3 Pro II (see the caution under [Boards](#boards)), the `-withparts` ones with its stock partition table (`partitions/r3proii.txt`). |
 
 All of them are about 410 KiB and fit the 512 KiB `uboot` partition. The
 commands below use the R1's file names; on the R3 Pro II, use its own.

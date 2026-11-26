@@ -9,9 +9,16 @@
  * scheme as the R1 (kernel2/rootfs2 recovery, "ota:kernel2" record), the
  * same console UART and USB IDs; its own key ladder and LEDs.
  *
- * Not yet compared with the R3 Pro II's stock SPL (its "uboot"
- * partition): DDR setup, NAND chips, kernel command line and partition
- * table are assumed to match the R1's.
+ * Compared with the R3 Pro II's stock SPL (a dump of its "uboot"
+ * partition, U-Boot SPL 2013.07-g2a44fbe of 30 Aug 2025):
+ *  - DDR: LPDDR2, one chip, M54D5121632A (64 MiB, the X1600E's own), built
+ *    the way the SDK's CONFIG_X1600E_DDR does it. Its register values are
+ *    those of the stock SPL, field for field; with one entry it is used
+ *    whatever the eFuse SoC ID or the burned DDR ID say, as stock.
+ *  - SPI NAND: every chip the stock SPL knows is in the shared table.
+ *  - Kernel command lines, the OTA record: the same as the R1's.
+ *  - Partition table: the R1's layout, but the recovery root fs is
+ *    called "rootfs2" (partitions/r3proii.txt).
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -48,6 +55,13 @@
  * on I2C bus 0 (/module_driver/leds_sgm31324_add.sh), not plain GPIOs,
  * and U-Boot has no driver for it.
  */
+
+/*
+ * DDR as the stock SPL: LPDDR2 M54D5121632A only (x1600_base_common.h), not
+ * the R1's table of eight chips chosen by SoC ID. Before the include, which
+ * reads it.
+ */
+#define CONFIG_X1600E_DDR
 
 #include "hiby_x1600_common.h"
 
