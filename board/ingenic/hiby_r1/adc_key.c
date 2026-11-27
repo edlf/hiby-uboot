@@ -20,8 +20,6 @@
 #include <asm/arch/base.h>
 #include <asm/arch/cpm.h>
 
-#ifdef CONFIG_SPL_BUILD
-
 #define ADENA		0x00
 #define ADCFG		0x04
 #define ADCTRL		0x08
@@ -140,10 +138,12 @@ static void adc_init(void)
 	adc_writel((adc_readl(ADSTB) & ~0xffff) | 1, ADSTB);
 }
 
-/* Returns the channel voltage in mV, or -1 on error. */
-int hiby_r1_adc_key_read_mv(void)
+/*
+ * Channel @ch in mV, or -1 on error. Also used by the full U-Boot
+ * (display.c: the panel ID on channel 3).
+ */
+int hiby_r1_adc_read_mv(unsigned int ch)
 {
-	const unsigned int ch = CONFIG_HIBY_ADC_KEY_CHANNEL;
 	int raw;
 
 	adc_init();
@@ -167,6 +167,71 @@ int hiby_r1_adc_key_read_mv(void)
 		return -1;
 
 	return raw * CONFIG_HIBY_ADC_VREF_MV / 4096;
+}
+
+#ifndef CONFIG_SPL_BUILD
+/*
+ * Reads that never wait, for the fastboot menu (display.c), polled from
+ * the fastboot main loop: as soc_adc.c does a conversion, the channel is
+ * enabled, its ready flag is waited for, then the channel is disabled.
+ */
+static int poll_started = -1;	/* channel converting, or -1 */
+static ulong poll_since;
+
+#define ADC_POLL_TIMEOUT_MS	100
+
+void hiby_r1_adc_poll_start(void)
+{
+	adc_init();
+	adc_enable_controller();
+	adc_setbits(ADSTATE, ADC_ALL_IRQ);
+	adc_clrbits(ADCTRL, ADC_ALL_IRQ);
+	poll_started = -1;
+}
+
+/* Channel @ch in mV once converted; -2 while it is converting */
+int hiby_r1_adc_poll_mv(unsigned int ch)
+{
+	int raw;
+
+	if (poll_started == (int)ch) {
+		if (adc_readl(ADSTATE) & (1 << ch)) {
+			raw = adc_read_channel(ch);
+			adc_disable_channel(ch);
+			adc_writel(1 << ch, ADSTATE);	/* clear the flag */
+			poll_started = -1;
+			return raw * CONFIG_HIBY_ADC_VREF_MV / 4096;
+		}
+		if (get_timer(poll_since) < ADC_POLL_TIMEOUT_MS)
+			return -2;
+		adc_disable_channel(ch);	/* lost: start again */
+	}
+
+	adc_writel(1 << ch, ADSTATE);
+	if (adc_enable_channel(ch) < 0)
+		return -1;
+	poll_started = ch;
+	poll_since = get_timer(0);
+	return -2;
+}
+
+void hiby_r1_adc_poll_stop(void)
+{
+	if (poll_started >= 0)
+		adc_disable_channel(poll_started);
+	poll_started = -1;
+	adc_disable_controller();
+	adc_setbits(ADCTRL, ADC_ALL_IRQ);
+	adc_setbits(ADSTATE, ADC_ALL_IRQ);
+}
+#endif /* !CONFIG_SPL_BUILD */
+
+#ifdef CONFIG_SPL_BUILD
+
+/* Returns the key channel voltage in mV, or -1 on error. */
+int hiby_r1_adc_key_read_mv(void)
+{
+	return hiby_r1_adc_read_mv(CONFIG_HIBY_ADC_KEY_CHANNEL);
 }
 
 /* Sample once per boot; both hooks below share the reading. */

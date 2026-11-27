@@ -1268,6 +1268,14 @@ static int fb_find_partition(const char *name)
 void __weak fastboot_led_busy(void) {}
 void __weak fastboot_led_idle(void) {}
 void __weak fastboot_led_off(void) {}
+/* Leaving fastboot (reset, or "boot" from RAM): the board shuts down
+ * what it brought up, such as the display. */
+void __weak fastboot_board_leave(void) {}
+/* The board's controls, polled from the main loop (FASTBOOT_BOARD_*);
+ * @busy: a transfer is in progress. */
+int __weak fastboot_board_poll(int busy) { return FASTBOOT_BOARD_STAY; }
+/* Cuts the power; returns only if that failed. */
+void __weak fastboot_board_power_off(void) {}
 
 static int fb_busy;	/* a download/fetch transfer is in progress */
 
@@ -2265,6 +2273,7 @@ static void fb_reset_after_reply(void)
 {
 	usb_gadget_disconnect(fastboot_common->gadget);
 	mdelay(100);
+	fastboot_board_leave();
 	run_command("reset", 0);
 }
 
@@ -2527,6 +2536,7 @@ static void fb_boot_go(void)
 	mdelay(100);
 	/* fastboot's colour off: the kernel starts with the LEDs dark */
 	fastboot_led_off();
+	fastboot_board_leave();
 
 	strcpy(args, fb_boot_args);
 	memmove(dst, hdr, hsize + image_get_data_size(hdr));
@@ -2757,6 +2767,32 @@ static void function_add(struct fastboot_dev *fastboot)
 #ifdef CONFIG_FASTBOOT_SFC_NAND
 	if (fb_busy)
 		fastboot_led_busy();	/* USB data transfer in progress */
+
+	/* the board's keys and menu: leave fastboot the way they ask */
+	switch (fastboot_board_poll(fb_busy)) {
+	case FASTBOOT_BOARD_REBOOT:
+		printf("fastboot: reboot (board menu)\n");
+		fb_reset_after_reply();
+		printf("reboot failed\n");
+		break;
+#ifdef CONFIG_FASTBOOT_REBOOT_RECOVERY
+	case FASTBOOT_BOARD_RECOVERY:
+		printf("fastboot: reboot recovery (board menu)\n");
+		cpm_set_scrpad((cpm_get_scrpad() & ~0xffff) | RECOVERY_SIGNATURE);
+		fb_reset_after_reply();
+		printf("reboot failed\n");
+		break;
+#endif
+	case FASTBOOT_BOARD_POWEROFF:
+		printf("fastboot: power off (board menu)\n");
+		usb_gadget_disconnect(fastboot_common->gadget);
+		mdelay(100);
+		fastboot_led_off();
+		fastboot_board_leave();
+		fastboot_board_power_off();
+		printf("power off failed\n");
+		break;
+	}
 #endif
 	return;
 }

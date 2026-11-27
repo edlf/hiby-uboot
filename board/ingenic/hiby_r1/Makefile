@@ -28,6 +28,9 @@ COBJS-y	:= board.o
 COBJS-$(CONFIG_HIBY_ADC_KEY) += adc_key.o
 ifndef CONFIG_SPL_BUILD
 COBJS-$(CONFIG_CMD_FASTBOOT) += fastboot.o
+COBJS-$(CONFIG_HIBY_DISPLAY) += display.o
+COBJS-$(CONFIG_HIBY_PANEL_LG35583) += panel_r1.o
+COBJS-$(CONFIG_HIBY_PANEL_ST7701_SBTC033001) += panel_r3proii.o
 endif
 
 SRCS	:= $(SOBJS-y:.o=.S) $(COBJS-y:.o=.c)

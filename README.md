@@ -118,8 +118,8 @@ The commands in this README are run from that folder.
 | --- | --- |
 | `u-boot-hiby_r1.bin` | SPL + U-Boot, partition table area left blank. For `fastboot flash uboot`: U-Boot then keeps the table already in flash. **The image for updates.** |
 | `u-boot-hiby_r1-withparts.bin` | The same with the stock partition table at 0x5800 (copied from the stock image). For writing the partition directly: the first install from Linux, a flash programmer, Ingenic's USB cloner. |
-| `u-boot-hiby_r1-nouid.bin`, `u-boot-hiby_r1-nouid-withparts.bin` | The same without reading the NAND unique ID for the USB serial number (it is then `0123456789`). A fallback in case the ID read misbehaves on some NAND chip. |
-| `u-boot-hiby_r3proii.bin`, `u-boot-hiby_r3proii-nouid.bin` and their `-withparts` copies | The same for the R3 Pro II (see the caution under [Boards](#boards)), the `-withparts` ones with its stock partition table (`partitions/r3proii.txt`). |
+| `u-boot-hiby_r1-nouid.bin`, `u-boot-hiby_r1-nouid-withparts.bin` | The same without reading the NAND unique ID for the USB serial number (it is then `0123456789`). A fallback in case the ID read misbehaves on some NAND chip. Built only with `./build_images.sh --nouid`. |
+| `u-boot-hiby_r3proii.bin`, `u-boot-hiby_r3proii-withparts.bin` (and the `-nouid` ones with `--nouid`) | The same for the R3 Pro II (see the caution under [Boards](#boards)), the `-withparts` ones with its stock partition table (`partitions/r3proii.txt`). |
 
 All of them are about 410 KiB and fit the 512 KiB `uboot` partition. The
 commands below use the R1's file names; on the R3 Pro II, use its own.

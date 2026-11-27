@@ -9,6 +9,8 @@
  *   and U-Boot's relocated malloc/stack area.
  * - an "ota:fastboot" request in the "ota" partition is cleared, so the
  *   next boot (or a power cycle) goes back to Linux.
+ * - with CONFIG_HIBY_DISPLAY, the screen shows fastboot mode and whether
+ *   a command is running (display.c), and is turned off before leaving.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -148,6 +150,20 @@ out:
 static int led_lit;
 static ulong led_since;
 
+#ifdef CONFIG_HIBY_DISPLAY
+void hiby_r1_display_init(void);
+void hiby_r1_display_busy(int busy);
+void hiby_r1_display_off(void);
+int hiby_r1_display_poll(int busy);
+void hiby_r1_power_off(void);
+#else
+static inline void hiby_r1_display_init(void) {}
+static inline void hiby_r1_display_busy(int busy) {}
+static inline void hiby_r1_display_off(void) {}
+static inline int hiby_r1_display_poll(int busy) { return FASTBOOT_BOARD_STAY; }
+static inline void hiby_r1_power_off(void) {}
+#endif
+
 static void led_set(int lit)
 {
 #ifdef CONFIG_HIBY_LED_RED_GPIO
@@ -168,12 +184,14 @@ static void fastboot_led_on(void)
 /* Overrides the weak hooks in drivers/usb/gadget/f_fastboot.c */
 void fastboot_led_busy(void)
 {
+	hiby_r1_display_busy(1);
 	if (get_timer(led_since) >= LED_BLINK_MS)
 		led_set(!led_lit);
 }
 
 void fastboot_led_idle(void)
 {
+	hiby_r1_display_busy(0);
 	if (!led_lit)
 		led_set(1);
 }
@@ -183,9 +201,27 @@ void fastboot_led_off(void)
 	led_set(0);
 }
 
+/* Overrides the weak hook in f_fastboot.c: before a reset or "boot" */
+void fastboot_board_leave(void)
+{
+	hiby_r1_display_off();
+}
+
+/* Overrides the weak hooks in f_fastboot.c: the on-screen menu */
+int fastboot_board_poll(int busy)
+{
+	return hiby_r1_display_poll(busy);
+}
+
+void fastboot_board_power_off(void)
+{
+	hiby_r1_power_off();
+}
+
 void hiby_r1_fastboot_init(void)
 {
 	fastboot_led_on();
+	hiby_r1_display_init();
 	fill_partitions();
 	set_max_download_size();
 	clear_ota_request();

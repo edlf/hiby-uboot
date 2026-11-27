@@ -43,6 +43,22 @@
 #define CONFIG_HIBY_LED_BLUE_GPIO	(2 * 32 + 2)	/* PC02 */
 #define CONFIG_HIBY_LED_ON		1
 
+/*
+ * Screen in fastboot mode (board/ingenic/hiby_r1/display.c, panel_r1.c;
+ * settings in display.h), from /module_driver/lcd_lg35583.sh,
+ * axp2101.sh, soc_i2c.sh and pwm_backlight.sh.
+ */
+#define CONFIG_HIBY_DISPLAY
+#define CONFIG_HIBY_PANEL_LG35583		/* LG35583 or ST7701S */
+#define CONFIG_HIBY_LCD_SPI_CS		(0 * 32 + 30)	/* PA30 */
+#define CONFIG_HIBY_LCD_RST		(0 * 32 + 31)	/* PA31 */
+#define CONFIG_HIBY_LCD_MV		3000		/* BLDO1, BLDO2 */
+#define CONFIG_HIBY_PMU_I2C_SCL		(0 * 32 + 28)	/* PA28 */
+#define CONFIG_HIBY_PMU_I2C_SDA		(0 * 32 + 29)	/* PA29 */
+#define CONFIG_HIBY_BL_PWM_FREQ		30000
+#define CONFIG_HIBY_DISPLAY_BRIGHTNESS	40	/* backlight, percent */
+#define CONFIG_INGENIC_SOFT_I2C
+
 #include "hiby_x1600_common.h"
 
 #endif /* __HIBY_R1_H__ */

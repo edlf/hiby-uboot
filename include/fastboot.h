@@ -44,4 +44,16 @@ struct board_info {
 	char hardware_ver[16];
 	unsigned long max_download_size;
 };
+
+/*
+ * What the board's own controls (keys and menu) ask for, from
+ * fastboot_board_poll() in the fastboot main loop (f_fastboot.c).
+ */
+#define FASTBOOT_BOARD_STAY		0
+#define FASTBOOT_BOARD_REBOOT		1	/* as "fastboot reboot" */
+#define FASTBOOT_BOARD_RECOVERY		2	/* as "fastboot reboot recovery" */
+#define FASTBOOT_BOARD_POWEROFF		3
+
+int fastboot_board_poll(int busy);
+void fastboot_board_power_off(void);
 #endif

@@ -63,6 +63,23 @@
  */
 #define CONFIG_X1600E_DDR
 
+/*
+ * Screen in fastboot mode (board/ingenic/hiby_r1/display.c,
+ * panel_r3proii.c; settings in display.h), from
+ * /module_driver/lcd_st7701_sbtc033001.sh, axp2101.sh, soc_i2c.sh and
+ * pwm_backlight.sh.
+ */
+#define CONFIG_HIBY_DISPLAY
+#define CONFIG_HIBY_PANEL_ST7701_SBTC033001
+#define CONFIG_HIBY_LCD_SPI_CS		(1 * 32 + 4)	/* PB04 */
+#define CONFIG_HIBY_LCD_RST		(1 * 32 + 5)	/* PB05 */
+#define CONFIG_HIBY_LCD_MV		2800		/* BLDO1, BLDO2 */
+#define CONFIG_HIBY_PMU_I2C_SCL		(1 * 32 + 30)	/* PB30 */
+#define CONFIG_HIBY_PMU_I2C_SDA		(1 * 32 + 31)	/* PB31 */
+#define CONFIG_HIBY_BL_PWM_FREQ		10000
+#define CONFIG_HIBY_DISPLAY_BRIGHTNESS	40	/* backlight, percent */
+#define CONFIG_INGENIC_SOFT_I2C
+
 #include "hiby_x1600_common.h"
 
 #endif /* __HIBY_R3PROII_H__ */
