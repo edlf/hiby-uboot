@@ -13,6 +13,9 @@
  *   CONFIG_HIBY_PMU_I2C_SCL, _SDA  I2C0 pins of the AXP2101
  *   CONFIG_HIBY_BL_PWM_FREQ      backlight PWM frequency
  *   CONFIG_HIBY_DISPLAY_BRIGHTNESS  backlight, percent
+ *   CONFIG_HIBY_CHARGER_MP2731   the battery is charged by an MP2731 (I2C0,
+ *                                0x4b), not the AXP2101: whether it is
+ *                                charging is read from it
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -25,6 +28,12 @@
 
 #include <common.h>
 #include <asm/gpio.h>
+#include <ingenic_soft_i2c.h>
+
+/* The PMIC's I2C0, bit-banged (display.c); battery.c reads the gauge and the
+ * charger on it too */
+#define AXP2101_ADDR		0x34
+extern struct i2c hiby_pmu_i2c;
 
 #define HIBY_LCD_SPI_SCK	GPIO_PA(0)
 #define HIBY_LCD_SPI_MOSI	GPIO_PA(1)

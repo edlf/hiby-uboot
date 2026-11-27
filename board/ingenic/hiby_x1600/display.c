@@ -21,9 +21,9 @@
  *    command runs. A long press of Power picks nothing, so holding it
  *    still forces the PMIC off. Power off is the AXP2101's, as Linux's
  *    pm_power_off.
- *  - the battery: the CW2015 fuel gauge's percentage, read as Linux's
- *    cw2015 module scales it (never written: Linux keeps it set up), and
- *    whether the AXP2101 is charging; every few seconds.
+ *  - the battery line: percentage and charging, from battery.c, every
+ *    few seconds; battery.c also keeps the R3 Pro II's charge limit,
+ *    released before a reset, a boot or a power off (below).
  *
  * Everything is turned off again before a reset or a "boot" from RAM,
  * so Linux finds the panel as it does after power-on. See display.h for
@@ -47,6 +47,7 @@
 #include <video_font_data.h>
 #include <fastboot.h>
 #include "display.h"
+#include "battery.h"
 
 void hiby_r1_display_off(void);
 
@@ -58,7 +59,6 @@ void hiby_r1_display_off(void);
 /* RGB666 on a 24-bit bus: D2-D7, D10-D15, D18-D23, PCLK, VSYNC, HSYNC, DE */
 #define TFT_PINS	0x0ffcfcfc
 
-#define AXP2101_ADDR	0x34
 #define AXP_CHIP_ID	0x03
 #define AXP_LDO_EN0	0x90
 #define AXP_BLDO1_V	0x96
@@ -143,7 +143,8 @@ static void *fb_mem, *desc_mem;	/* as allocated */
 static int xres, yres;
 static int lcd_on;
 static int shown_busy = -1;
-static struct i2c pmu_i2c = {
+/* The PMIC's I2C0, shared with battery.c (display.h) */
+struct i2c hiby_pmu_i2c = {
 	.scl = CONFIG_HIBY_PMU_I2C_SCL,
 	.sda = CONFIG_HIBY_PMU_I2C_SDA,
 };
@@ -152,12 +153,12 @@ static struct i2c pmu_i2c = {
 
 static int axp_read(u8 reg, u8 *val)
 {
-	return i2c_read(&pmu_i2c, AXP2101_ADDR, reg, 1, val, 1);
+	return i2c_read(&hiby_pmu_i2c, AXP2101_ADDR, reg, 1, val, 1);
 }
 
 static int axp_write(u8 reg, u8 val)
 {
-	return i2c_write(&pmu_i2c, AXP2101_ADDR, reg, 1, &val, 1);
+	return i2c_write(&hiby_pmu_i2c, AXP2101_ADDR, reg, 1, &val, 1);
 }
 
 static int axp_update(u8 reg, u8 mask, u8 val)
@@ -173,7 +174,7 @@ static int axp_setup(void)
 {
 	u8 id;
 
-	i2c_init(&pmu_i2c);
+	i2c_init(&hiby_pmu_i2c);
 	if (axp_read(AXP_CHIP_ID, &id)) {
 		printf("display: no AXP2101 at 0x%x\n", AXP2101_ADDR);
 		return -1;
@@ -188,64 +189,6 @@ static int axp_setup(void)
 int hiby_lcd_supply(unsigned int ldos, int on)
 {
 	return axp_update(AXP_LDO_EN0, ldos, on ? ldos : 0);
-}
-
-/* --- battery (cw2015.c, axp2101.c) ---------------------------------- */
-
-#define CW2015_ADDR		0x62	/* on the PMIC's I2C0 */
-#define CW_REG_SOC		0x04	/* percent, then 1/256 percent */
-#define CW_REG_CONFIG		0x08
-#define  CW_CONFIG_UPDATE_FLG	0x02	/* the battery profile is loaded */
-#define CW_REG_HIGH_SOC		0x4f	/* bit 7: full is bits 6..0, not 100 */
-#define AXP_STATUS2		0x01	/* 6..5 current direction, 2..0 state */
-
-static int cw_read(u8 reg, u8 *buf, int len)
-{
-	return i2c_read(&pmu_i2c, CW2015_ADDR, reg, 1, buf, len);
-}
-
-/*
- * The battery in percent as cw_get_capacity() works it out (without its
- * smoothing between readings), or -1: no gauge, or no profile loaded yet
- * (Linux has not run since the battery was connected).
- */
-static int battery_percent(void)
-{
-	static int no_gauge;	/* it did not answer: stop asking */
-	u8 soc[2], high, cfg;
-	int full, pct;
-
-	if (no_gauge)
-		return -1;
-	if (cw_read(CW_REG_CONFIG, &cfg, 1)) {
-		no_gauge = 1;
-		return -1;
-	}
-	if (!(cfg & CW_CONFIG_UPDATE_FLG))
-		return -1;
-	if (cw_read(CW_REG_SOC, soc, 2) || cw_read(CW_REG_HIGH_SOC, &high, 1))
-		return -1;
-	if (soc[0] > 100)
-		return -1;
-
-	full = (high & 0x80) ? (high & 0x7f) : 100;
-	if (!full)
-		full = 100;
-	pct = ((soc[0] << 8) + soc[1]) * 100 / (full << 8);
-	return pct > 100 ? 100 : pct;
-}
-
-/* As the axp2101 battery's POWER_SUPPLY_PROP_STATUS: charging (or done) */
-static int battery_charging(void)
-{
-	u8 st;
-	int state;
-
-	if (axp_read(AXP_STATUS2, &st))
-		return 0;
-	state = st & 0x07;
-	return (state >= 1 && state <= 4) ||
-	       (state == 5 && ((st >> 5) & 0x03) == 1);
 }
 
 /* --- panel SPI ------------------------------------------------------- */
@@ -532,9 +475,12 @@ static ulong battery_at;
 /* "Battery 73%" (", charging"); nothing when it cannot be read */
 static void draw_battery(void)
 {
-	int pct = battery_percent();
-	int chg = pct >= 0 && battery_charging();
+	int pct = hiby_battery_percent();
+	int chg;
 	char line[32];
+
+	hiby_charge_limit_poll(pct);
+	chg = pct >= 0 && hiby_battery_charging();
 
 	battery_at = get_timer(0);
 	if (pct == shown_pct && chg == shown_chg)
@@ -820,7 +766,7 @@ int hiby_r1_display_poll(int busy)
 void hiby_r1_power_off(void)
 {
 	hiby_r1_display_off();
-	i2c_init(&pmu_i2c);
+	i2c_init(&hiby_pmu_i2c);
 	axp_update(AXP_COMM_CFG, AXP_PWR_OFF, AXP_PWR_OFF);
 	mdelay(1000);
 }
@@ -828,6 +774,8 @@ void hiby_r1_power_off(void)
 /* soc_fb's disable_fb(), in the order of the board's soc_fb */
 void hiby_r1_display_off(void)
 {
+	/* first, while the PMIC's I2C is as fastboot had it */
+	hiby_charge_limit_release();
 	if (keys_on) {
 		hiby_r1_adc_poll_stop();
 		keys_on = 0;

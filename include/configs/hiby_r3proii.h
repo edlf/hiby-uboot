@@ -78,6 +78,7 @@
 #define CONFIG_HIBY_PMU_I2C_SDA		(1 * 32 + 31)	/* PB31 */
 #define CONFIG_HIBY_BL_PWM_FREQ		10000
 #define CONFIG_HIBY_DISPLAY_BRIGHTNESS	40	/* backlight, percent */
+#define CONFIG_HIBY_CHARGER_MP2731		/* the charger, at 0x4b on I2C0 */
 #define CONFIG_INGENIC_SOFT_I2C
 
 #include "hiby_x1600_common.h"
