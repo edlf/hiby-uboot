@@ -46,7 +46,7 @@
 #define CONFIG_SPL_OS_OTA_BOOT
 
 /*
- * ADC key (board/ingenic/hiby_r1/adc_key.c): sampled once by the SPL, on
+ * ADC key (board/ingenic/hiby_x1600/adc_key.c): sampled once by the SPL, on
  * the stock ADC ladder (/module_driver/keyboard_adc*.sh: channel 0,
  * 3300 mV idle, keys matched within 100 mV). The board header gives the
  * windows; a reading inside the recovery window boots kernel2/rootfs2

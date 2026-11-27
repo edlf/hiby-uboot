@@ -44,7 +44,7 @@
 #define CONFIG_HIBY_LED_ON		1
 
 /*
- * Screen in fastboot mode (board/ingenic/hiby_r1/display.c, panel_r1.c;
+ * Screen in fastboot mode (board/ingenic/hiby_x1600/display.c, panel_r1.c;
  * settings in display.h), from /module_driver/lcd_lg35583.sh,
  * axp2101.sh, soc_i2c.sh and pwm_backlight.sh.
  */

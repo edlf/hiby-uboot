@@ -24,7 +24,7 @@ right after the SPL that runs only when fastboot is asked for.
 | USB | `32bb:0101`, "HiBy R1" | `32bb:0101`, "HiBy R3 Pro II" |
 | Status | in use | **built, never run; do not install yet** |
 
-Both share everything else: the board code (`board/ingenic/hiby_r1`), the
+Both share everything else: the board code (`board/ingenic/hiby_x1600`), the
 settings in `include/configs/hiby_x1600_common.h`, the OTA and recovery
 scheme, the console (UART2, 3 Mbaud) and HiBy's USB IDs. The R3 Pro II
 values come from its stock firmware 1.4 (`r3proii(v1.4).upt`: key
@@ -341,11 +341,11 @@ The partition table of a `uboot` image:
 
 ### Board and boot
 
-`board/ingenic/hiby_r1`, `common/spl/spl_sfc_nand_v2.c`
+`board/ingenic/hiby_x1600`, `common/spl/spl_sfc_nand_v2.c`
 
 - New boards `hiby_r1` and `hiby_r3proii` (`boards.cfg` targets
   `hiby_r1_xImage_sfc_nand`, `hiby_r3proii_xImage_sfc_nand`), sharing the
-  board code in `board/ingenic/hiby_r1` and the settings in
+  board code in `board/ingenic/hiby_x1600` and the settings in
   `include/configs/hiby_x1600_common.h`; UART2 at 3 Mbaud as stock.
 - ADC key driver (`adc_key.c`): SADC channel 0, Volume down / Volume up /
   Play/Pause windows per board (see [Boards](#boards)).

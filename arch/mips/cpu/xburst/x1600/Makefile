@@ -64,7 +64,7 @@ $(obj)pllsetting.o:$(OBJTREE)/include/generated/pll_reg_values.h
 $(OBJTREE)/include/generated/pll_reg_values.h:$(OBJTREE)/$(dir)/pll_params_creator.exe
 	$< > $@
 
-$(OBJTREE)/$(dir)/pll_params_creator.exe:$(SRCTREE)/$(dir)/pll_params_creator.c | $(SRCTREE)/include/configs/$(BOARD).h
+$(OBJTREE)/$(dir)/pll_params_creator.exe:$(SRCTREE)/$(dir)/pll_params_creator.c | $(SRCTREE)/include/configs/$(or $(BOARD_CONFIG),$(BOARD)).h
 	$(HOSTCC) $(HOSTCFLAGS_NOPED) $(HOSTLDFLAGS) $(HOSTCPPFLAGS) -o $@ $^
 
 $(obj).depend.clk:$(OBJTREE)/include/generated/clk_reg_values.h
@@ -73,7 +73,7 @@ $(obj)clk.o:$(OBJTREE)/include/generated/clk_reg_values.h
 $(OBJTREE)/include/generated/clk_reg_values.h:$(OBJTREE)/$(dir)/clk_params_creator.exe
 	$< > $@
 
-$(OBJTREE)/$(dir)/clk_params_creator.exe:$(SRCTREE)/$(dir)/clk_params_creator.c | $(SRCTREE)/include/configs/$(BOARD).h
+$(OBJTREE)/$(dir)/clk_params_creator.exe:$(SRCTREE)/$(dir)/clk_params_creator.c | $(SRCTREE)/include/configs/$(or $(BOARD_CONFIG),$(BOARD)).h
 	$(HOSTCC) $(HOSTCFLAGS_NOPED) $(HOSTLDFLAGS) $(HOSTCPPFLAGS) -o $@ $^
 endif
 #########################################################################

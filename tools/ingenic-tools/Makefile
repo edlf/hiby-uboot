@@ -94,7 +94,7 @@ DDR-TYPE-LPDDR-$(CONFIG_DDR_TYPE_LPDDR) = $(DDR_CREATOR_DIR)/lpddr_params.c
 DDR-TYPE-DDR2-$(CONFIG_DDR_TYPE_DDR2) = $(DDR_CREATOR_DIR)/ddr2_params.c
 DDR-TYPE-DDR3-$(CONFIG_DDR_TYPE_DDR3) = $(DDR_CREATOR_DIR)/ddr3_params.c
 
-ALL_INCLUDE_PRIVATE := $(SRCTREE)/include/configs/$(BOARD).h $(DDR_CREATOR_DIR)/ddr_params_creator.h
+ALL_INCLUDE_PRIVATE := $(SRCTREE)/include/configs/$(or $(BOARD_CONFIG),$(BOARD)).h $(DDR_CREATOR_DIR)/ddr_params_creator.h
 all:	$(obj).depend $(TOOLS)
 
 $(obj)ddr_params_creator_ddr3: $(DDR-TYPE-y) $(DDR-TYPE-DDR3-y)
@@ -160,7 +160,7 @@ $(1):$(2) $(3)
 	$(HOSTCC) $(HOSTCFLAGS_NOPED) $(HOSTLDFLAGS) -c -o $(1) $(2)
 endef
 
-ALL_INCLUDE_PRIVATE := $(SRCTREE)/include/configs/$(BOARD).h $(DDR_CREATOR_DIR)/ddr_params_creator.h
+ALL_INCLUDE_PRIVATE := $(SRCTREE)/include/configs/$(or $(BOARD_CONFIG),$(BOARD)).h $(DDR_CREATOR_DIR)/ddr_params_creator.h
 all:	$(obj).depend $(TOOLS)
 
 ddr-type-objs-y := $(addprefix $(obj), $(DDR-TYPE-y))

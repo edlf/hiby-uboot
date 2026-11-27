@@ -133,6 +133,9 @@ fi
 	echo "CPU    = ${cpu}"
     fi
     echo "BOARD  = ${board}"
+    # the board header, include/configs/<name>.h (not always the board's
+    # folder name: several targets can share one folder)
+    echo "BOARD_CONFIG = ${CONFIG_NAME}"
 
     [ "${vendor}" ] && echo "VENDOR = ${vendor}"
     [ "${soc}"    ] && echo "SOC    = ${soc}"

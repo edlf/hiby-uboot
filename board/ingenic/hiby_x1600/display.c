@@ -15,7 +15,7 @@
  *  - the backlight: PWM channel 0 on PC00, active high, at
  *    CONFIG_HIBY_DISPLAY_BRIGHTNESS percent (pwm_backlight.sh, soc_pwm)
  *
- *  - a menu: Reboot to system, Reboot to recovery, Power off; Vol+ and
+ *  - a menu: Boot system, Boot recovery, Power off; Vol+ and
  *    Vol- move (the ADC key ladder), a short press of Power picks (PC31);
  *    polled from the fastboot main loop without waiting, ignored while a
  *    command runs. A long press of Power picks nothing, so holding it
@@ -555,8 +555,8 @@ static const struct {
 	const char *doing;	/* status once picked */
 	int action;		/* FASTBOOT_BOARD_* */
 } menu[] = {
-	{ "Reboot to system",	"Rebooting...",		FASTBOOT_BOARD_REBOOT },
-	{ "Reboot to recovery",	"Rebooting...",		FASTBOOT_BOARD_RECOVERY },
+	{ "Boot system",		"Booting...",		FASTBOOT_BOARD_REBOOT },
+	{ "Boot recovery",	"Booting...",		FASTBOOT_BOARD_RECOVERY },
 	{ "Power off",		"Powering off...",	FASTBOOT_BOARD_POWEROFF },
 };
 #define MENU_N		ARRAY_SIZE(menu)

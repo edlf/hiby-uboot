@@ -3,7 +3,7 @@
  *
  * What is the R3 Pro II's own; the rest is shared with the other HiBy
  * X1600 players in hiby_x1600_common.h, and the board code with the R1
- * (board/ingenic/hiby_r1). See README.md (U-Boot top directory).
+ * (board/ingenic/hiby_x1600). See README.md (U-Boot top directory).
  *
  * Taken from the stock firmware 1.4 (r3proii(v1.4).upt): the same OTA
  * scheme as the R1 (kernel2/rootfs2 recovery, "ota:kernel2" record), the
@@ -64,7 +64,7 @@
 #define CONFIG_X1600E_DDR
 
 /*
- * Screen in fastboot mode (board/ingenic/hiby_r1/display.c,
+ * Screen in fastboot mode (board/ingenic/hiby_x1600/display.c,
  * panel_r3proii.c; settings in display.h), from
  * /module_driver/lcd_st7701_sbtc033001.sh, axp2101.sh, soc_i2c.sh and
  * pwm_backlight.sh.
