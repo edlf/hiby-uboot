@@ -85,8 +85,21 @@ int misc_init_r(void)
 }
 
 #ifdef CONFIG_MMC
+/*
+ * The microSD slot (msc1, hiby_x1600_common.h): its power switched on, then
+ * the controller registered. The card itself is only initialised when
+ * something uses it.
+ */
 int board_mmc_init(bd_t *bd)
 {
+#ifdef CONFIG_HIBY_SD_PWR_GPIO
+	gpio_direction_output(CONFIG_HIBY_SD_PWR_GPIO, 1);
+	mdelay(10);	/* let the card supply settle */
+#endif
+#ifdef CONFIG_HIBY_SD_CD_GPIO
+	gpio_direction_input(CONFIG_HIBY_SD_CD_GPIO);
+	printf("SD: %s\n", gpio_get_value(CONFIG_HIBY_SD_CD_GPIO) ? "no card" : "card in");
+#endif
 	jz_mmc_init();
 	return 0;
 }

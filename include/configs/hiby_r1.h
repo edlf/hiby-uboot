@@ -44,6 +44,12 @@
 #define CONFIG_HIBY_LED_ON		1
 
 /*
+ * microSD slot power (msc1), as /module_driver/soc_msc.sh has it: PC25,
+ * high = on (see hiby_x1600_common.h).
+ */
+#define CONFIG_HIBY_SD_PWR_GPIO		(2 * 32 + 25)	/* PC25 */
+
+/*
  * Screen in fastboot mode (board/ingenic/hiby_x1600/display.c, panel_r1.c;
  * settings in display.h), from /module_driver/lcd_lg35583.sh,
  * axp2101.sh, soc_i2c.sh and pwm_backlight.sh.

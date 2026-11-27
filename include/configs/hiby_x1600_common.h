@@ -95,6 +95,26 @@
 #define CONFIG_FASTBOOT_REBOOT_RECOVERY
 #define CONFIG_SPL_SCRPAD_RECOVERY
 
+/*
+ * microSD card, in the full U-Boot only (fastboot mode; the SPL stays as it
+ * is). The slot is msc1, as the stock /module_driver/soc_msc.sh sets it up:
+ * PD0-PD5 (clk, cmd, d0-d3, function 0), 4-bit, card detect PB22 (low when a
+ * card is in), card power on the board's CONFIG_HIBY_SD_PWR_GPIO (high =
+ * on). msc0 is the Wi-Fi's SDIO and stays off. The controller is registered
+ * at start (board_mmc_init, with the slot powered); a card is only touched
+ * when something asks for it. File systems on it: FAT (12/16/32, long names)
+ * and ext4, read-only, as the SDK's base config sets them (fatls, fatload,
+ * ext4ls, ext4load).
+ */
+/*
+ * Not for the SPL, and not for the host tools either: spl_params_fixer would
+ * otherwise add an msc1 clock setting to the SPL's parameter block.
+ */
+#if !defined(CONFIG_SPL_BUILD) && !defined(USE_HOSTCC)
+#define CONFIG_JZ_MMC_MSC1
+#endif
+#define CONFIG_HIBY_SD_CD_GPIO		(1 * 32 + 22)	/* PB22, low = card in */
+
 #include "x1600_base_common.h"
 
 /* Stock SPL leaves DDR2 DLL reset off (except X1600HN, set per chip) */

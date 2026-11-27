@@ -64,6 +64,12 @@
 #define CONFIG_X1600E_DDR
 
 /*
+ * microSD slot power (msc1), as /module_driver/soc_msc.sh has it: PF14,
+ * high = on (see hiby_x1600_common.h).
+ */
+#define CONFIG_HIBY_SD_PWR_GPIO		(5 * 32 + 14)	/* PF14 */
+
+/*
  * Screen in fastboot mode (board/ingenic/hiby_x1600/display.c,
  * panel_r3proii.c; settings in display.h), from
  * /module_driver/lcd_st7701_sbtc033001.sh, axp2101.sh, soc_i2c.sh and
